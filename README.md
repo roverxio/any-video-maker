@@ -4,7 +4,7 @@ A sophisticated video generation pipeline powered by CrewAI, featuring specializ
 
 ## 🚀 Features
 
-- **CrewAI-Powered Workflow**: Four specialized agents working in collaboration
+- **CrewAI-Powered Workflow**: Three specialized agents working in collaboration with direct media generation
 - **Complete Video Production**: From script to final video with all media assets
 - **AI Media Generation**: Images, videos, and audio using fal.ai APIs
 - **Voice Selection**: Intelligent voice casting using ElevenLabs via fal.ai
@@ -28,8 +28,8 @@ A sophisticated video generation pipeline powered by CrewAI, featuring specializ
 - **Expertise**: Voice casting, audience psychology, ElevenLabs voice library
 - **Output**: Voice selection with specific voice ID and optimization recommendations
 
-### 4. AI Media Production Specialist Agent
-- **Role**: Generates all media assets and orchestrates complete video production
+### 4. Direct Media Generation (Non-Agent)
+- **Role**: Programmatic execution of media generation using existing modules
 - **Expertise**: fal.ai APIs, video generation, audio synthesis, post-production
 - **Output**: Complete video with all media assets and final video file
 
@@ -133,7 +133,7 @@ outputs/
 2. **Summary Agent**: Analyzes input and creates video summary with scenes and voiceover
 3. **Script Agent**: Transforms summary into structured JSON for production
 4. **Voice Agent**: Selects optimal voice actor from ElevenLabs library
-5. **Media Agent**: Generates all media assets (images, videos, audio) using fal.ai
+5. **Media Generation**: Direct execution generates all media assets (images, videos, audio) using fal.ai
 6. **Video Assembly**: Stitches all media together into final video using ffmpeg
 7. **Output**: Complete video file with all assets and documentation
 
@@ -160,7 +160,8 @@ outputs/
 - Considers factors like age, gender, accent, and emotional tone
 - Provides voice optimization recommendations for production
 
-### Media Generation Agent
+### Media Generation Handler
+- Directly executes media generation without LLM overhead
 - Generates high-quality images using fal.ai Flux Pro models
 - Creates dynamic videos from static images with motion and animation
 - Produces natural-sounding voiceovers using ElevenLabs via fal.ai
@@ -170,7 +171,7 @@ outputs/
 ## 🛠️ Technical Details
 
 ### CrewAI Integration
-- **Sequential Workflow**: Summary → Script → Voice → Media generation
+- **Hybrid Workflow**: Summary → Script → Voice (CrewAI agents) → Direct Media Generation
 - **Enhanced Error Handling**: CrewAI's built-in error management
 - **Agent Communication**: Structured data passing between agents
 - **Context Preservation**: Original user input available to all agents

@@ -7,3 +7,4 @@ moviepy
 ffmpeg-python
 pathlib
 typing
+json5

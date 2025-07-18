@@ -81,26 +81,26 @@ class MediaGenerator:
             scene_id = scene["scene_id"]
             composition = scene.get("scene_composition", "single_shot")
             
-            # If reference is provided, use it for all images for consistency
-            needs_reference = reference_path is not None
-            
             if composition == "single_shot":
                 prompt = scene.get("image_prompt")
                 if not prompt:
                     self.logger.warning(f"Skipping image for scene {scene_id} due to missing prompt.")
                     continue
                 
+                # Extract has_reference from scene data
+                scene_has_reference = scene.get("has_reference", False)
+                
                 task = {
                     "task_id": scene_id,
                     "prompt": prompt,
-                    "needs_reference": needs_reference,
+                    "has_reference": scene_has_reference,
                     "reference_path": reference_path,
                     "aspect_ratio": aspect_ratio,
                     "log_id": scene_id
                 }
                 image_tasks.append(task)
             
-            elif composition == "multi_shot_montage":
+            elif composition == "montage":
                 scene_prompt = scene.get("image_prompt")
                 for shot in scene.get("shots", []):
                     shot_id = shot["shot_id"]
@@ -121,10 +121,13 @@ class MediaGenerator:
                         self.logger.warning(f"No image prompt found for shot {task_id} in scene {scene_id}. Skipping.")
                         continue
                     
+                    # Extract has_reference from shot data
+                    shot_has_reference = shot.get("has_reference", False)
+                    
                     task = {
                         "task_id": task_id,
                         "prompt": final_prompt,
-                        "needs_reference": needs_reference,
+                        "has_reference": shot_has_reference,
                         "reference_path": reference_path,
                         "aspect_ratio": aspect_ratio,
                         "log_id": task_id
@@ -156,7 +159,7 @@ class MediaGenerator:
         
         task_id = task["task_id"]
         prompt = task["prompt"]
-        needs_reference = task["needs_reference"]
+        has_reference = task["has_reference"]
         reference_path = task["reference_path"]
         aspect_ratio = task["aspect_ratio"]
         log_id = task["log_id"]
@@ -176,7 +179,7 @@ class MediaGenerator:
 
         for attempt in range(retries):
             try:
-                if needs_reference and reference_path:
+                if has_reference and reference_path:
                     # Use image-to-image model with reference
                     self.logger.debug(f"Using reference image for {log_id}")
                     
@@ -200,11 +203,11 @@ class MediaGenerator:
                     )
                 else:
                     # Use text-to-image model
-                    log_api_call(self.logger, "fal.ai", "flux-pro/text-to-image", 
+                    log_api_call(self.logger, "fal.ai", "flux-pro/v1.1", 
                                {"prompt": prompt})
                     
                     result = fal_client.submit(
-                        "fal-ai/flux-pro",
+                        "fal-ai/flux-pro/v1.1",
                         arguments={
                             "prompt": prompt,
                             "image_size": image_size,
@@ -226,7 +229,7 @@ class MediaGenerator:
                 
                 duration = time.time() - start_time
                 log_media_generation(self.logger, "image", log_id, 
-                                   {"prompt": prompt, "provider": "fal", "needs_reference": needs_reference},
+                                   {"prompt": prompt, "provider": "fal", "has_reference": has_reference},
                                    image_path, duration)
                 
                 return image_path
@@ -248,7 +251,7 @@ class MediaGenerator:
 
         task_id = task["task_id"]
         prompt = task["prompt"]
-        needs_reference = task["needs_reference"]
+        has_reference = task["has_reference"]
         reference_path = task["reference_path"]
         aspect_ratio = task["aspect_ratio"]
         log_id = task["log_id"]
@@ -257,7 +260,7 @@ class MediaGenerator:
         self.logger.info(f"🎨 Starting image generation for {log_id}")
         self.logger.info(f"📝 Prompt: {prompt}")
         self.logger.info(f"📐 Aspect ratio: {aspect_ratio}")
-        if needs_reference:
+        if has_reference:
             self.logger.info(f"🖼️ Using reference image: {reference_path}")
 
         aspect_ratio_to_size = {
@@ -274,7 +277,7 @@ class MediaGenerator:
 
         for attempt in range(retries):
             try:
-                if needs_reference and reference_path:
+                if has_reference and reference_path:
                     response = self._generate_openai_image_with_reference(prompt, reference_path, size, log_id)
                 else:
                     response = self._generate_openai_image_from_prompt(prompt, size, log_id)
@@ -310,7 +313,7 @@ class MediaGenerator:
                                    {
                                        "prompt": prompt,
                                        "provider": "openai",
-                                       "needs_reference": needs_reference,
+                                       "has_reference": has_reference,
                                        "color_corrected": True,
                                        "original_path": str(original_image_path),
                                        "corrected_path": str(corrected_image_path),
@@ -421,7 +424,7 @@ class MediaGenerator:
                                    {
                                        "prompt": prompt,
                                        "provider": "replicate",
-                                       "needs_reference": True,
+                                       "has_reference": True,
                                        "color_corrected": False,
                                        "path": str(image_path),
                                        "duration": duration
@@ -471,7 +474,7 @@ class MediaGenerator:
                 }
                 video_tasks.append(task)
             
-            elif composition == "multi_shot_montage":
+            elif composition == "montage":
                 shots = scene.get("shots", [])
                 if not shots:
                     self.logger.error(f"No shots found for montage scene {scene_id}")

@@ -19,19 +19,12 @@ class VideoAgents:
         """Create the Video Summary Generator Agent"""
         
         return Agent(
-            role="Video Content Analyst & Summarizer",
-            goal="Analyze user input (image + text) to create comprehensive video summaries with visual scenes, voiceover scripts, and production configurations",
-            backstory="""You are an expert video content analyst with 15+ years of experience in film production, 
-            advertising, and digital content creation. You have a deep understanding of visual storytelling, 
+            role="Video Script Writer & concept creator",
+            goal="Analyze user inputs (image + text) to produce a video configuration and video summary that maintains **visual and contextual consistency** across scenes, with clearly distinguished moments and feasible production requirements.",
+            backstory="""You are an expert video content creator with 15+ years of experience in film production, 
+            advertising, and digital content creation for social media. You have a deep understanding of visual storytelling, 
             cinematography, and audience engagement. Your specialty is taking raw creative inputs and transforming 
-            them into structured, production-ready video concepts that maintain visual consistency and narrative flow.
-            
-            You excel at:
-            - Analyzing visual elements and text prompts to understand user intent
-            - Creating cinematic scene descriptions with proper camera work and lighting
-            - Generating natural, conversational voiceover scripts
-            - Determining optimal video configurations (duration, aspect ratio, style)
-            - Ensuring technical feasibility for AI video generation""",
+            them into structured, production-ready video concepts that maintain visual consistency and narrative flow.""",
             
             verbose=True,
             allow_delegation=False,
@@ -44,13 +37,48 @@ class VideoAgents:
                 "temperature": 0.7
             }
         )
+
+    def create_voiceover_generator_agent(self) -> Agent:
+        """Create the Voice Over Text Generator Agent"""
+        
+        return Agent(
+            role="Voice Over Text Generator",
+            goal="Analyze the video summary to determine the most appropriate voice-over style, then write an engaging voice-over script timed perfectly to the scenes in the video summary according to the given rules.",
+            backstory="""You are a professional voice-over scriptwriter who can intelligently adapt your style based on video content.
+            You are particularly skilled at writing to fit a specific duration. You know just how many words to use so that the voice-over script fits the scene duration.
+            You have extensive experience writing voice-over scripts for various media formats including commercials, 
+            documentaries, explainer videos, social media content, and corporate presentations. Your expertise spans 
+            multiple industries and you understand how to craft compelling narratives that enhance visual storytelling while adhering to the scenes' durations.
+            
+            You excel at:
+            - Analyzing video summaries to understand tone, pacing, and target audience
+            - Noting the scene durations and writing the voice-over script to fit the duration.
+            - Adapting writing style to match content type (educational, promotional, narrative, etc.)
+            - Creating natural, conversational scripts that flow seamlessly with visual elements
+            - Timing scripts to sync perfectly with scene transitions and key visual moments
+            - Writing compelling hooks and calls-to-action that drive engagement
+            - Balancing information delivery with entertainment value
+            - Ensuring script length matches video duration requirements
+            - Incorporating brand voice and messaging guidelines when applicable""",
+            
+            verbose=True,
+            allow_delegation=False,
+            tools=[],
+            
+            # Agent-specific configuration
+            config={
+                "openai_api_key": self.config["OPENAI_API_KEY"],
+                "model": "gpt-4o",
+                "temperature": 0.6
+            }
+        ) 
     
     def create_script_generator_agent(self) -> Agent:
         """Create the Video Script Generator Agent"""
         
         return Agent(
             role="Video Production Script Engineer",
-            goal="Transform video summaries into detailed, structured JSON scripts optimized for automated video production systems",
+            goal="Transform video summaries, config, and voice over text into detailed, structured JSON scripts optimized for automated video production systems. CRITICAL: 1) Accurately analyze scene composition (single_shot vs montage), 2) Detect ONLY mentions of the reference image in the summary, 3) Create highly detailed STATIC image prompts with specific descriptions of people, settings, and lighting.",
             backstory="""You are a senior video production engineer with expertise in automated video generation 
             systems and AI-powered content creation. You have worked with major streaming platforms, advertising 
             agencies, and content creation tools. Your role is to bridge the gap between creative concepts and 
@@ -58,9 +86,15 @@ class VideoAgents:
             
             You specialize in:
             - Converting creative summaries into production-ready JSON structures
-            - Optimizing prompts for AI image and video generation systems
+            - CRITICAL: Analyzing scenes to determine if they contain multiple distinct visual elements (montage) or a single continuous action (single_shot)
+            - IMPORTANT: Detecting EXPLICIT mentions of the reference image (which could be anything - logo, person, location, object) and marking only those specific scenes/shots with has_reference=true
+            - Understanding that camera movements, transitions, and multiple visual elements indicate a montage composition
+            - Writing highly detailed STATIC image prompts for AI image generation (specific age, clothing, setting, lighting, camera angles)
+            - IMPORTANT: Separating static visual descriptions (image prompts) from motion/animation (action prompts)
+            - When has_reference is true, incorporating the reference image description naturally into the static scene
+            - Optimizing image prompts with rich details: "young woman in her 20s" not "person", "modern glass office with plants" not "office"
+            - Writing action prompts that animate ONLY existing elements from the image (subject/object movement and camera motion only)
             - Ensuring technical accuracy in scene timing and composition
-            - Creating detailed action prompts for motion and animation
             - Maintaining narrative coherence across complex multi-scene productions
             - Validating production feasibility and resource requirements""",
             
@@ -108,36 +142,5 @@ class VideoAgents:
             }
         )
     
-    def create_media_generation_agent(self) -> Agent:
-        """Create the Media Generation Agent"""
-        
-        return Agent(
-            role="AI Media Production Specialist",
-            goal="Generate all media assets (images, videos, audio) using fal.ai APIs and orchestrate the complete media production pipeline",
-            backstory="""You are a senior AI media production specialist with extensive experience in automated 
-            content creation using cutting-edge AI platforms. You have worked with major content creation platforms, 
-            advertising agencies, and media production houses. Your expertise spans image generation, video creation, 
-            audio synthesis, and post-production workflows.
-            
-            You specialize in:
-            - Generating high-quality images using fal.ai's Flux Pro models
-            - Creating dynamic videos from static images with motion and animation
-            - Producing natural-sounding voiceovers using ElevenLabs via fal.ai
-            - Orchestrating complex media generation pipelines
-            - Optimizing prompts for maximum AI generation quality
-            - Managing concurrent generation tasks for efficiency
-            - Ensuring technical quality and consistency across all media assets
-            - Handling post-production tasks like video stitching and audio mixing""",
-            
-            verbose=True,
-            allow_delegation=False,
-            tools=[],
-            
-            # Agent-specific configuration
-            config={
-                "openai_api_key": self.config["OPENAI_API_KEY"],
-                "fal_ai_api_key": self.config["FAL_AI_API_KEY"],
-                "model": "gpt-4o",
-                "temperature": 0.2
-            }
-        ) 
+
+    

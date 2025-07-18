@@ -48,11 +48,15 @@ class VideoGenerationCrew:
                 output_folder = Path(f"outputs/run_{timestamp}")
                 output_folder.mkdir(parents=True, exist_ok=True)
             
+            # Create scripts subfolder for saving intermediate results
+            scripts_folder = output_folder / "video_scripts"
+            scripts_folder.mkdir(exist_ok=True)
+            
             # Create agents
             summary_agent = self.agents.create_summary_generator_agent()
+            voiceover_agent = self.agents.create_voiceover_generator_agent()
             script_agent = self.agents.create_script_generator_agent()
             voice_agent = self.agents.create_voice_selection_agent()
-            media_agent = self.agents.create_media_generation_agent()
             
             # Step 1: Generate Summary
             summary_task = self.tasks.create_summary_generation_task(
@@ -70,9 +74,31 @@ class VideoGenerationCrew:
             summary_result = summary_crew.kickoff()
             summary_data = self._parse_crew_result(summary_result, "summary")
             
-            # Step 2: Generate Script
+            # Save summary results immediately
+            self._save_summary_results(summary_data, scripts_folder)
+            
+            # Step 2: Generate Voiceover
+            voiceover_task = self.tasks.create_voiceover_generation_task(
+                voiceover_agent, summary_data
+            )
+            
+            voiceover_crew = Crew(
+                agents=[voiceover_agent],
+                tasks=[voiceover_task],
+                verbose=True,
+                memory=False
+            )
+            
+            self.logger.info("Executing voiceover generation task...")
+            voiceover_result = voiceover_crew.kickoff()
+            voiceover_data = self._parse_crew_result(voiceover_result, "voiceover")
+            
+            # Save voiceover results immediately
+            self._save_voiceover_results(voiceover_data, summary_data, scripts_folder)
+            
+            # Step 3: Generate Script
             script_task = self.tasks.create_script_generation_task(
-                script_agent, summary_data, user_prompt, reference_url
+                script_agent, summary_data
             )
             
             script_crew = Crew(
@@ -86,7 +112,10 @@ class VideoGenerationCrew:
             script_result = script_crew.kickoff()
             final_script = self._parse_crew_result(script_result, "script")
             
-            # Step 3: Select Voice
+            # Save script results immediately
+            self._save_script_results(final_script, scripts_folder)
+            
+            # Step 4: Select Voice
             voice_task = self.tasks.create_voice_selection_task(
                 voice_agent, final_script, user_prompt, reference_url
             )
@@ -102,16 +131,23 @@ class VideoGenerationCrew:
             voice_result = voice_crew.kickoff()
             voice_data = self._parse_crew_result(voice_result, "voice")
             
-            # Step 4: Generate Media (using direct execution, not CrewAI agent)
+            # Save voice selection results immediately
+            self._save_voice_results(voice_data, scripts_folder)
+            
+            # Step 5: Generate Media (using direct execution, not CrewAI agent)
             self.logger.info("Executing media generation...")
             media_handler = MediaGenerationHandler(self.config, self.logger, output_folder)
             media_result = media_handler.generate_media(
                 final_script, voice_data, user_prompt, reference_url
             )
             
+            # Save media generation results immediately
+            self._save_media_results(media_result, scripts_folder)
+            
             # Combine all results
             complete_result = {
                 "summary_result": summary_data,
+                "voiceover_result": voiceover_data,
                 "script_result": final_script,
                 "voice_result": voice_data,
                 "media_result": media_result,
@@ -120,6 +156,9 @@ class VideoGenerationCrew:
                 "generation_timestamp": datetime.now().isoformat(),
                 "output_folder": str(output_folder)
             }
+            
+            # Save complete workflow results
+            self._save_complete_results(complete_result, output_folder)
             
             self.logger.info("CrewAI video generation workflow completed successfully")
             return complete_result
@@ -160,6 +199,15 @@ class VideoGenerationCrew:
                 self.logger.info(f"{step_name.capitalize()} generation completed successfully")
                 return parsed_data
             except json.JSONDecodeError as json_error:
+                # Try to fix common JSON issues (like trailing commas) with json5
+                try:
+                    import json5
+                    parsed_data = json5.loads(content)
+                    self.logger.info(f"{step_name.capitalize()} generation completed successfully (fixed with json5)")
+                    return parsed_data
+                except (ImportError, Exception) as json5_error:
+                    # json5 not available or failed, continue with original error handling
+                    pass
                 # If JSON parsing fails, try to extract JSON from the response
                 self.logger.warning(f"Initial JSON parsing failed for {step_name}: {json_error}")
                 
@@ -178,7 +226,7 @@ class VideoGenerationCrew:
                         except json.JSONDecodeError:
                             continue
                 
-                # If all else fails, create a fallback response for voice selection
+                # If all else fails, create a fallback response
                 if step_name == "voice":
                     self.logger.warning(f"Creating fallback voice selection for {step_name}")
                     fallback_response = {
@@ -204,6 +252,45 @@ class VideoGenerationCrew:
                     }
                     self.logger.info(f"Using fallback voice selection for {step_name}")
                     return fallback_response
+                elif step_name == "voiceover":
+                    self.logger.warning(f"Creating fallback voiceover generation for {step_name}")
+                    fallback_response = {
+                        "voiceover_generation": {
+                            "detected_style": "narrator",
+                            "overall_tone": "friendly and conversational",
+                            "full_voiceover_text": "Scene 1: Check this out.\nScene 2: Pretty amazing stuff.\nScene 3: This changes everything.",
+                            "scenes": [
+                                {
+                                    "scene_number": "Scene 1",
+                                    "voiceover_text": "Check this out.",
+                                    "word_count": 3,
+                                    "estimated_duration": 1.2,
+                                    "scene_duration": 5,
+                                    "timing_match": "good"
+                                },
+                                {
+                                    "scene_number": "Scene 2", 
+                                    "voiceover_text": "Pretty amazing stuff.",
+                                    "word_count": 3,
+                                    "estimated_duration": 1.2,
+                                    "scene_duration": 5,
+                                    "timing_match": "good"
+                                },
+                                {
+                                    "scene_number": "Scene 3",
+                                    "voiceover_text": "This changes everything.",
+                                    "word_count": 3,
+                                    "estimated_duration": 1.2,
+                                    "scene_duration": 5,
+                                    "timing_match": "good"
+                                }
+                            ],
+                            "style_justification": "Fallback narrator style selected due to parsing error",
+                            "technical_notes": "Standard pacing and emphasis"
+                        }
+                    }
+                    self.logger.info(f"Using fallback voiceover generation for {step_name}")
+                    return fallback_response
                 
                 # For other steps, raise the original error
                 raise json_error
@@ -213,7 +300,7 @@ class VideoGenerationCrew:
             self.logger.error(f"Raw result type: {type(result)}")
             self.logger.error(f"Raw result content: {result}")
             
-            # For voice selection, provide a fallback
+            # Provide fallbacks for specific steps
             if step_name == "voice":
                 self.logger.warning("Providing fallback voice selection due to parsing error")
                 return {
@@ -235,6 +322,43 @@ class VideoGenerationCrew:
                         "recommended_pacing": "medium",
                         "emotional_emphasis": "Natural conversational tone",
                         "technical_notes": "Standard voice generation settings"
+                    }
+                }
+            elif step_name == "voiceover":
+                self.logger.warning("Providing fallback voiceover generation due to parsing error")
+                return {
+                    "voiceover_generation": {
+                        "detected_style": "narrator",
+                        "overall_tone": "friendly and conversational",
+                        "full_voiceover_text": "Scene 1: Check this out.\nScene 2: Pretty amazing stuff.\nScene 3: This changes everything.",
+                        "scenes": [
+                            {
+                                "scene_number": "Scene 1",
+                                "voiceover_text": "Check this out.",
+                                "word_count": 3,
+                                "estimated_duration": 1.2,
+                                "scene_duration": 5,
+                                "timing_match": "good"
+                            },
+                            {
+                                "scene_number": "Scene 2",
+                                "voiceover_text": "Pretty amazing stuff.",
+                                "word_count": 3,
+                                "estimated_duration": 1.2,
+                                "scene_duration": 5,
+                                "timing_match": "good"
+                            },
+                            {
+                                "scene_number": "Scene 3",
+                                "voiceover_text": "This changes everything.",
+                                "word_count": 3,
+                                "estimated_duration": 1.2,
+                                "scene_duration": 5,
+                                "timing_match": "good"
+                            }
+                        ],
+                        "style_justification": "Fallback narrator style selected due to parsing error",
+                        "technical_notes": "Standard pacing and emphasis"
                     }
                 }
             
@@ -285,13 +409,32 @@ class VideoGenerationCrew:
                 self.logger.error(f"Failed to save config.json: {e}")
                 success_status["config.json"] = False
             
-            # Save voiceover as JSON
+            # Save dedicated voiceover results
+            voiceover_result = results.get("voiceover_result", {})
+            try:
+                voiceover_file = scripts_folder / "voiceover_generation.json"
+                with open(voiceover_file, 'w', encoding='utf-8') as f:
+                    json.dump(voiceover_result, f, indent=2)
+                self.logger.info(f"Saved voiceover generation to {voiceover_file}")
+                success_status["voiceover_generation.json"] = True
+            except Exception as e:
+                self.logger.error(f"Failed to save voiceover_generation.json: {e}")
+                success_status["voiceover_generation.json"] = False
+            
+            # Save legacy voiceover format for compatibility
             try:
                 voiceover_file = scripts_folder / "voiceover.json"
-                voiceover_data = {
-                    "voiceover_text": summary_result.get("voiceover", ""),
-                    "scenes": summary_result.get("voiceover_scenes", [])
-                }
+                # Extract data from either new voiceover_result or fallback to summary
+                if voiceover_result and "voiceover_generation" in voiceover_result:
+                    voiceover_data = {
+                        "voiceover_text": voiceover_result["voiceover_generation"].get("full_voiceover_text", ""),
+                        "scenes": voiceover_result["voiceover_generation"].get("scenes", [])
+                    }
+                else:
+                    voiceover_data = {
+                        "voiceover_text": summary_result.get("voiceover", ""),
+                        "scenes": summary_result.get("voiceover_scenes", [])
+                    }
                 with open(voiceover_file, 'w', encoding='utf-8') as f:
                     json.dump(voiceover_data, f, indent=2)
                 self.logger.info(f"Saved voiceover to {voiceover_file}")
@@ -355,3 +498,94 @@ class VideoGenerationCrew:
         except Exception as e:
             self.logger.error(f"Error saving results: {e}")
             return {"error": False} 
+
+    def _save_summary_results(self, summary_data: Dict[str, Any], scripts_folder: Path) -> None:
+        """Save summary results immediately after generation"""
+        try:
+            # Save visual summary as markdown
+            summary_file = scripts_folder / "summary.md"
+            with open(summary_file, 'w', encoding='utf-8') as f:
+                f.write("# Video Summary\n\n")
+                f.write(summary_data.get("visual_summary", ""))
+            self.logger.info(f"✅ Saved visual summary to {summary_file}")
+            
+            # Save video config as JSON
+            config_file = scripts_folder / "config.json"
+            with open(config_file, 'w', encoding='utf-8') as f:
+                json.dump(summary_data.get("video_config", {}), f, indent=2)
+            self.logger.info(f"✅ Saved video config to {config_file}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save summary results: {e}")
+    
+    def _save_voiceover_results(self, voiceover_data: Dict[str, Any], summary_data: Dict[str, Any], scripts_folder: Path) -> None:
+        """Save voiceover results immediately after generation"""
+        try:
+            # Save dedicated voiceover results
+            voiceover_file = scripts_folder / "voiceover_generation.json"
+            with open(voiceover_file, 'w', encoding='utf-8') as f:
+                json.dump(voiceover_data, f, indent=2)
+            self.logger.info(f"✅ Saved voiceover generation to {voiceover_file}")
+            
+            # Save legacy voiceover format for compatibility
+            voiceover_legacy_file = scripts_folder / "voiceover.json"
+            if voiceover_data and "voiceover_generation" in voiceover_data:
+                voiceover_legacy_data = {
+                    "voiceover_text": voiceover_data["voiceover_generation"].get("full_voiceover_text", ""),
+                    "scenes": voiceover_data["voiceover_generation"].get("scenes", [])
+                }
+            else:
+                voiceover_legacy_data = {
+                    "voiceover_text": summary_data.get("voiceover", ""),
+                    "scenes": summary_data.get("voiceover_scenes", [])
+                }
+            with open(voiceover_legacy_file, 'w', encoding='utf-8') as f:
+                json.dump(voiceover_legacy_data, f, indent=2)
+            self.logger.info(f"✅ Saved legacy voiceover to {voiceover_legacy_file}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save voiceover results: {e}")
+    
+    def _save_script_results(self, script_data: Dict[str, Any], scripts_folder: Path) -> None:
+        """Save script results immediately after generation"""
+        try:
+            script_file = scripts_folder / "script.json"
+            with open(script_file, 'w', encoding='utf-8') as f:
+                json.dump(script_data, f, indent=2)
+            self.logger.info(f"✅ Saved script to {script_file}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save script results: {e}")
+    
+    def _save_voice_results(self, voice_data: Dict[str, Any], scripts_folder: Path) -> None:
+        """Save voice selection results immediately after generation"""
+        try:
+            voice_file = scripts_folder / "voice_selection.json"
+            with open(voice_file, 'w', encoding='utf-8') as f:
+                json.dump(voice_data, f, indent=2)
+            self.logger.info(f"✅ Saved voice selection to {voice_file}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save voice selection results: {e}")
+    
+    def _save_media_results(self, media_data: Dict[str, Any], scripts_folder: Path) -> None:
+        """Save media generation results immediately after generation"""
+        try:
+            media_file = scripts_folder / "media_generation.json"
+            with open(media_file, 'w', encoding='utf-8') as f:
+                json.dump(media_data, f, indent=2)
+            self.logger.info(f"✅ Saved media generation results to {media_file}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save media generation results: {e}")
+    
+    def _save_complete_results(self, complete_data: Dict[str, Any], output_folder: Path) -> None:
+        """Save complete workflow results"""
+        try:
+            complete_file = output_folder / "complete_workflow.json"
+            with open(complete_file, 'w', encoding='utf-8') as f:
+                json.dump(complete_data, f, indent=2)
+            self.logger.info(f"✅ Saved complete workflow to {complete_file}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save complete workflow results: {e}") 

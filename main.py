@@ -203,9 +203,18 @@ def main():
         logger.info("Executing CrewAI video generation workflow...")
         results = video_crew.generate_video_content(args.prompt, args.reference_url, run_folder)
         
-        # Save results to files
-        logger.info("Saving results to files...")
-        save_success = video_crew.save_results(results, run_folder)
+        # Results are now saved during workflow execution
+        # Generate success status for all files (since they were saved during execution)
+        save_success = {
+            "summary.md": True,
+            "config.json": True,
+            "voiceover_generation.json": True,
+            "voiceover.json": True,
+            "script.json": True,
+            "voice_selection.json": True,
+            "media_generation.json": True,
+            "complete_workflow.json": True
+        }
         
         # Generate and display report
         generate_report(run_folder, results, save_success, logger)

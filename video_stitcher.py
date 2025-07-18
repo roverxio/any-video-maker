@@ -24,6 +24,27 @@ class VideoStitcher:
         # Ensure ffmpeg is available
         validate_ffmpeg()
         
+    def _get_standard_properties_from_aspect_ratio(self, aspect_ratio: str) -> Dict[str, Any]:
+        """Calculate standard video properties based on aspect ratio."""
+        
+        # Map aspect ratios to standard dimensions
+        aspect_dimensions = {
+            "9:16": {"width": 720, "height": 1280},  # Vertical (mobile)
+            "16:9": {"width": 1280, "height": 720}, # Horizontal (landscape)
+            "1:1": {"width": 1080, "height": 1080}, # Square (social)
+            "4:3": {"width": 1024, "height": 768},  # Traditional
+            "3:4": {"width": 768, "height": 1024}   # Vertical traditional
+        }
+        
+        # Get dimensions for the specified aspect ratio, default to 9:16
+        dimensions = aspect_dimensions.get(aspect_ratio, aspect_dimensions["9:16"])
+        
+        return {
+            'width': dimensions["width"],
+            'height': dimensions["height"],
+            'frame_rate': self.config.get('video_fps', 24)
+        }
+
     def stitch_videos(self, script_data: Dict[str, Any], media_files: Dict[str, Dict[str, Path]]) -> Path:
         """Stitch together all video clips with their respective audio."""
         
@@ -110,14 +131,12 @@ class VideoStitcher:
         """Trim each video to its specified duration and standardize format."""
 
         scenes = script_data["scenes"]
+        video_config = script_data.get("video_config", {})
+        aspect_ratio = video_config.get("aspect_ratio", "9:16")
         trimmed_paths = {}
 
-        # Determine standard video properties from the first available video, with config fallback
-        standard_props = {
-            'width': self.config.get('video_width', 704),
-            'height': self.config.get('video_height', 1304),
-            'frame_rate': self.config.get('video_fps', 24)
-        }
+        # Calculate standard video properties based on aspect ratio
+        standard_props = self._get_standard_properties_from_aspect_ratio(aspect_ratio)
         
         first_valid_video_found = False
         for scene in scenes:
@@ -125,13 +144,21 @@ class VideoStitcher:
             if scene_id in video_paths:
                 props = self._get_video_properties(video_paths[scene_id])
                 if props and props.get('width'):  # Check if props are valid
-                    standard_props = props
-                    self.logger.info(f"Using video properties from {scene_id} as standard: {props['width']}x{props['height']} @ {props['frame_rate']:.2f}fps")
-                    first_valid_video_found = True
-                    break
+                    # Use the first video's properties if they match the expected aspect ratio
+                    video_aspect = props['width'] / props['height']
+                    expected_aspect = standard_props['width'] / standard_props['height']
+                    
+                    # If the video aspect ratio is close to expected, use its properties
+                    if abs(video_aspect - expected_aspect) < 0.1:
+                        standard_props['width'] = props['width']
+                        standard_props['height'] = props['height']
+                        standard_props['frame_rate'] = props['frame_rate']
+                        self.logger.info(f"Using video properties from {scene_id} as standard: {props['width']}x{props['height']} @ {props['frame_rate']:.2f}fps")
+                        first_valid_video_found = True
+                        break
         
         if not first_valid_video_found:
-            self.logger.info(f"Using fallback standard properties: {standard_props['width']}x{standard_props['height']} @ {standard_props['frame_rate']}fps")
+            self.logger.info(f"Using calculated standard properties for {aspect_ratio}: {standard_props['width']}x{standard_props['height']} @ {standard_props['frame_rate']}fps")
 
         for scene in scenes:
             scene_id = scene["scene_id"]

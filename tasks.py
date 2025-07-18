@@ -28,6 +28,9 @@ class VideoTasks:
             - Reference Image URL: {reference_url or "None provided"}
 
             ## Rules
+             * **Total video length should be 15-40 seconds across all scenes** *
+            
+            * **Total video length should be 15-40 seconds across all scenes** *
 
             * **Analyze both inputs together** to understand the true user intent and context. Combine the reference image with the instruction to infer the overall purpose and tone.
 
@@ -45,21 +48,25 @@ class VideoTasks:
 
             * **Include directorial elements** such as camera angles, lighting, and character expressions to create rich, descriptive visuals.
 
-            * **Keep the video genre flexible** – it can be a product ad, narrative, whimsical short, abstract animation, or single-speaker moment, depending on the combined input context.
+            * **Keep the video genre flexible** – it can be a product ad, social media post, tiktok video, brand video, tutorial, abstract animation, or single-speaker moment, depending on the combined input context.
 
-            * **Maintain a professional, cinematic tone** with clear scene progression.
-
-            * **Final summary length**: ideally **3–5 scenes**, each with 1–2 sentences. Every scene should contain actual video content, not meta-elements.
+            * **Final summary length**: ideally **5-9 scenes**, each with 1–2 sentences. Every scene should contain actual video content, not meta-elements.
 
             * **CRITICAL: Create SEPARATE scenes, not one long description**. Each scene is a distinct moment in the video with its own focus and duration.
 
             * **Write each scene as its own paragraph** that naturally incorporates visual elements, camera movements, and directorial details. Do NOT use bullet points, subsections, or formatted labels like "Visual:" or "Camera Angle:". Each scene should read as a cohesive description.
 
+            
+            * **Include scene type** for each scene in square brackets after the scene description
+              - Standard scene: scene which do not have multiple shots
+              - Montage scenes: scenes which have multiple shots and a nested shot structure
+            
+            
             * **Include duration estimates** for each scene in square brackets at the end, based on content complexity:
-              - Simple shots/transitions: [2-3s]
-              - Standard scenes: [5-7s]
-              - Complex multi-element scenes: [7-10s]
-              - Total video should be 15-40 seconds across all scenes
+              - Standard scenes: [3-5s]
+              - Montage scenes: [5-10s]
+
+
 
             ## Aspect Ratio Rules
 
@@ -84,13 +91,13 @@ class VideoTasks:
             - Aspect Ratio: [ratio]
             - Video Style: [detected style based on content]
 
-            Scene 1: Brief scene description incorporating visuals and camera work naturally. [5s]
+            Scene 1: Brief scene description incorporating visuals and camera work naturally. [Standard scene] [5s]
 
-            Scene 2: Another flowing description without subsections or labels. [7s]
+            Scene 2: Another flowing description without subsections or labels. [Montage scene] [7s]
 
-            Scene 3: Yet another distinct scene with its own focus. [7s]
+            Scene 3: Yet another distinct scene with its own focus. [Standard scene] [3s]
 
-            Scene 4: Final scene bringing closure to the video. [7s]
+            Scene 4: Final scene bringing closure to the video. [Montage scene][7s]
 
             IMPORTANT: Each scene must be labeled "Scene 1:", "Scene 2:", etc. and end with duration in brackets.
             
@@ -237,6 +244,7 @@ SCENE COMPOSITION EXAMPLES:
 - Multiple distinct visual elements in one scene = MONTAGE
 - Camera movement revealing new subjects = MONTAGE  
 - Single continuous action = SINGLE_SHOT
+- Scene mentioned as [Montage scenes] = MONTAGE
 
 REFERENCE IMAGE DETECTION:
 - Each shot independently evaluated
@@ -369,6 +377,17 @@ CRITICAL JSON REQUIREMENTS:
 **ACTION PROMPT EXAMPLES:**
 ❌ BAD: "She begins dancing energetically, the camera slowly pulls back as animated logo elements fade in around her"
 ✅ GOOD: "The woman dances energetically as the camera slowly pulls back"
+
+CRITICAL VOICEOVER REQUIREMENT:
+🚨 MANDATORY: Every scene MUST have voiceover_text. Never use empty strings ("") for voiceover_text.
+🚨 MANDATORY: If a scene has no voiceover in the summary, create appropriate voiceover text that matches the scene.
+🚨 MANDATORY: Each scene's voiceover should be natural and conversational, matching the duration.
+
+VOICEOVER GUIDELINES:
+- Scene 1-2: Product introduction and benefits
+- Scene 3-4: Emotional connection or call-to-action
+- Keep each voiceover concise and impactful
+- Match word count to scene duration (2-3 words per second)
 
 CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explanations. The response must be parseable JSON.
             """,

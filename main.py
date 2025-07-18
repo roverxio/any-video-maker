@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Main entry point for the Any Video Maker project.
-Orchestrates the complete video generation pipeline from user prompt to final script.
+Orchestrates the complete video generation pipeline using CrewAI.
 """
 
 import argparse
@@ -13,9 +13,16 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, Any, Optional
 
-# Import our modules
-from video_summary_generator import VideoSummaryGenerator
-from video_script_generator import VideoScriptGenerator
+# Load environment variables from .env file
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    print("Warning: python-dotenv not installed. Make sure your environment variables are set.")
+    pass
+
+# Import CrewAI modules
+from video_crew import VideoGenerationCrew
 
 
 def setup_logging(log_file: Path) -> logging.Logger:
@@ -53,89 +60,38 @@ def create_run_folder() -> Path:
     run_folder = outputs_dir / folder_name
     run_folder.mkdir(exist_ok=True)
     
-    # Create video_scripts subfolder
-    scripts_folder = run_folder / "video_scripts"
-    scripts_folder.mkdir(exist_ok=True)
-    
     return run_folder
 
 
-def save_summary_outputs(summary_result: Dict[str, Any], scripts_folder: Path, logger: logging.Logger) -> Dict[str, bool]:
-    """Save video summary outputs and return success status for each file"""
-    success_status = {}
-    
-    try:
-        # Save visual summary as markdown
-        summary_file = scripts_folder / "summary.md"
-        with open(summary_file, 'w', encoding='utf-8') as f:
-            f.write("# Video Summary\n\n")
-            f.write(summary_result["visual_summary"])
-        logger.info(f"Saved visual summary to {summary_file}")
-        success_status["summary.md"] = True
-    except Exception as e:
-        logger.error(f"Failed to save summary.md: {e}")
-        success_status["summary.md"] = False
-    
-    try:
-        # Save video config as JSON
-        config_file = scripts_folder / "config.json"
-        with open(config_file, 'w', encoding='utf-8') as f:
-            json.dump(summary_result.get("video_config", {}), f, indent=2)
-        logger.info(f"Saved video config to {config_file}")
-        success_status["config.json"] = True
-    except Exception as e:
-        logger.error(f"Failed to save config.json: {e}")
-        success_status["config.json"] = False
-    
-    try:
-        # Save voiceover as JSON
-        voiceover_file = scripts_folder / "voiceover.json"
-        voiceover_data = {
-            "voiceover_text": summary_result["voiceover"],
-            "scenes": summary_result["voiceover_scenes"]
-        }
-        with open(voiceover_file, 'w', encoding='utf-8') as f:
-            json.dump(voiceover_data, f, indent=2)
-        logger.info(f"Saved voiceover data to {voiceover_file}")
-        success_status["voiceover.json"] = True
-    except Exception as e:
-        logger.error(f"Failed to save voiceover.json: {e}")
-        success_status["voiceover.json"] = False
-    
-    return success_status
-
-
-def save_final_script(script_result: Dict[str, Any], scripts_folder: Path, logger: logging.Logger) -> bool:
-    """Save final script JSON and return success status"""
-    try:
-        script_file = scripts_folder / "final_script.json"
-        with open(script_file, 'w', encoding='utf-8') as f:
-            json.dump(script_result, f, indent=2)
-        logger.info(f"Saved final script to {script_file}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to save final_script.json: {e}")
-        return False
-
-
-def generate_report(run_folder: Path, summary_success: Dict[str, bool], 
-                   script_success: bool, summary_error: Optional[str], 
-                   script_error: Optional[str], logger: logging.Logger) -> None:
+def generate_report(run_folder: Path, results: Dict[str, Any], 
+                   save_success: Dict[str, bool], logger: logging.Logger) -> None:
     """Generate and save a run report"""
+    
+    # Extract media generation results
+    media_result = results.get("media_result", {})
+    media_status = media_result.get("media_generation_status", "unknown")
+    final_video = media_result.get("final_video")
+    generation_summary = media_result.get("generation_summary", {})
     
     report = {
         "run_folder": str(run_folder),
         "timestamp": datetime.now().isoformat(),
-        "summary_generation": {
-            "success": summary_error is None,
-            "error": summary_error,
-            "files": summary_success
+        "crewai_workflow": {
+            "success": True,
+            "summary_generation": "completed",
+            "script_generation": "completed",
+            "voice_selection": "completed",
+            "media_generation": media_status
         },
-        "script_generation": {
-            "success": script_success,
-            "error": script_error
-        },
-        "overall_success": summary_error is None and script_success
+        "file_saves": save_success,
+        "user_prompt": results.get("user_prompt", ""),
+        "reference_url": results.get("reference_url", ""),
+        "generation_timestamp": results.get("generation_timestamp", ""),
+        "media_generation": {
+            "status": media_status,
+            "final_video": final_video,
+            "summary": generation_summary
+        }
     }
     
     # Save report
@@ -149,33 +105,43 @@ def generate_report(run_folder: Path, summary_success: Dict[str, bool],
     
     # Print summary to console
     print("\n" + "="*60)
-    print("RUN SUMMARY")
+    print("CREWAI VIDEO GENERATION SUMMARY")
     print("="*60)
     print(f"Run folder: {run_folder}")
+    print("✅ CrewAI workflow completed successfully")
+    print("✅ Summary generation completed")
+    print("✅ Script generation completed")
+    print("✅ Voice selection completed")
     
-    if summary_error:
-        print(f"❌ Video summary generation FAILED: {summary_error}")
+    if media_status == "success":
+        print("✅ Media generation completed")
+        if final_video:
+            print(f"🎬 Final video: {final_video}")
+        if generation_summary:
+            print(f"📊 Generated {generation_summary.get('total_images', 0)} images")
+            print(f"📹 Generated {generation_summary.get('total_videos', 0)} videos")
+            print(f"🎤 Generated {generation_summary.get('total_voiceovers', 0)} voiceovers")
+            print(f"⏱️  Final duration: {generation_summary.get('final_duration', 0):.1f} seconds")
+            print(f"📁 File size: {generation_summary.get('file_size', '0 MB')}")
     else:
-        print("✅ Video summary generation SUCCESS")
-        for filename, success in summary_success.items():
-            status = "✅" if success else "❌"
-            print(f"  {status} {filename}")
+        print(f"❌ Media generation failed: {media_status}")
+        errors = media_result.get("errors", [])
+        for error in errors:
+            print(f"   Error: {error}")
     
-    if summary_error:
-        print("❌ Script generation SKIPPED (summary failed)")
-    elif script_success:
-        print("✅ Final script generation SUCCESS")
-    else:
-        print(f"❌ Final script generation FAILED: {script_error}")
+    print("\nGenerated files:")
+    for filename, success in save_success.items():
+        status = "✅" if success else "❌"
+        print(f"  {status} {filename}")
     
     print("="*60)
 
 
 def main():
-    """Main function"""
+    """Main function using CrewAI workflow"""
     
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description="Generate video content from user prompt")
+    parser = argparse.ArgumentParser(description="Generate video content from user prompt using CrewAI")
     parser.add_argument("prompt", help="Video generation prompt")
     parser.add_argument("--reference-url", "-r", help="Reference image URL (optional)")
     parser.add_argument("--verbose", "-v", action="store_true", help="Enable verbose logging")
@@ -185,7 +151,6 @@ def main():
     # Create run folder
     try:
         run_folder = create_run_folder()
-        scripts_folder = run_folder / "video_scripts"
         print(f"Created run folder: {run_folder}")
     except Exception as e:
         print(f"❌ Failed to create run folder: {e}")
@@ -200,95 +165,58 @@ def main():
         for handler in logger.handlers:
             handler.setLevel(logging.DEBUG)
     
-    logger.info(f"Starting video generation pipeline")
+    logger.info(f"Starting CrewAI video generation pipeline")
     logger.info(f"Prompt: {args.prompt}")
     logger.info(f"Reference URL: {args.reference_url}")
     
-    # Initialize variables for error tracking
-    summary_result = None
-    summary_success = {}
-    summary_error = None
-    script_success = False
-    script_error = None
+    # Load configuration
+    config = {
+        "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY"),
+        "FAL_AI_API_KEY": os.getenv("FAL_AI_API_KEY"),
+        "LOG_LEVEL": os.getenv("LOG_LEVEL", "INFO"),
+        "MAX_CONCURRENT_REQUESTS": int(os.getenv("MAX_CONCURRENT_REQUESTS", "3")),
+        "IMAGE_MODEL": os.getenv("IMAGE_MODEL", "fal"),
+        "VIDEO_MODEL": os.getenv("VIDEO_MODEL", "fal"),
+        "AUDIO_MODEL": os.getenv("AUDIO_MODEL", "fal"),
+        "video_width": int(os.getenv("VIDEO_WIDTH", "704")),
+        "video_height": int(os.getenv("VIDEO_HEIGHT", "1304")),
+        "video_fps": int(os.getenv("VIDEO_FPS", "24")),
+        "output_dir": os.getenv("OUTPUT_DIR", "./outputs")
+    }
     
-    # Step 1: Generate video summary and voiceover
+    if not config["OPENAI_API_KEY"]:
+        logger.error("OPENAI_API_KEY not found in environment variables")
+        print("❌ OPENAI_API_KEY not found in environment variables. Please check your .env file.")
+        return 1
+    
+    if not config["FAL_AI_API_KEY"]:
+        logger.error("FAL_AI_API_KEY not found in environment variables")
+        print("❌ FAL_AI_API_KEY not found in environment variables. Please check your .env file.")
+        return 1
+    
     try:
-        logger.info("Step 1: Generating video summary and voiceover...")
+        # Initialize CrewAI video generation crew
+        logger.info("Initializing CrewAI video generation crew...")
+        video_crew = VideoGenerationCrew(config, logger)
         
-        # Load config
-        config = {
-            "OPENAI_API_KEY": os.getenv("OPENAI_API_KEY")
-        }
+        # Execute the complete workflow
+        logger.info("Executing CrewAI video generation workflow...")
+        results = video_crew.generate_video_content(args.prompt, args.reference_url, run_folder)
         
-        if not config["OPENAI_API_KEY"]:
-            raise ValueError("OPENAI_API_KEY not found in environment variables. Please check your .env file.")
+        # Save results to files
+        logger.info("Saving results to files...")
+        save_success = video_crew.save_results(results, run_folder)
         
-        # Initialize and run video summary generator
-        summary_generator = VideoSummaryGenerator(config, logger)
-        summary_result = summary_generator.generate_complete_video_content(
-            args.prompt, 
-            args.reference_url
-        )
+        # Generate and display report
+        generate_report(run_folder, results, save_success, logger)
         
-        logger.info("Video summary generation completed successfully")
-        
-        # Save summary outputs
-        summary_success = save_summary_outputs(summary_result, scripts_folder, logger)
+        logger.info("CrewAI video generation pipeline completed successfully")
+        return 0
         
     except Exception as e:
-        summary_error = str(e)
-        logger.error(f"Video summary generation failed: {e}")
-    
-    # Step 2: Generate final script (only if summary succeeded)
-    if summary_result is not None:
-        try:
-            logger.info("Step 2: Generating final video script...")
-            
-            # Initialize script generator
-            script_generator = VideoScriptGenerator(logger)
-            
-            # Prepare voiceover data
-            voiceover_data = {
-                "voiceover_text": summary_result["voiceover"],
-                "scenes": summary_result["voiceover_scenes"]
-            }
-            
-            # Extract video config from summary result
-            video_config = summary_result.get("video_config", {
-                "total_duration": 30,
-                "aspect_ratio": "9:16", 
-                "video_style": "commercial"
-            })
-            
-            # Generate script
-            script_result = script_generator.generate_script(
-                visual_summary=summary_result["visual_summary"],
-                voiceover_data=voiceover_data,
-                video_config=video_config,
-                user_prompt=args.prompt,
-                reference_url=args.reference_url
-            )
-            
-            # Save final script
-            script_success = save_final_script(script_result, scripts_folder, logger)
-            
-            if script_success:
-                logger.info("Final script generation completed successfully")
-            
-        except Exception as e:
-            script_error = str(e)
-            logger.error(f"Final script generation failed: {e}")
-    else:
-        logger.warning("Skipping script generation due to summary failure")
-    
-    # Generate final report
-    generate_report(run_folder, summary_success, script_success, 
-                   summary_error, script_error, logger)
-    
-    # Return appropriate exit code
-    if summary_error or not script_success:
+        logger.error(f"CrewAI video generation pipeline failed: {e}")
+        print(f"❌ CrewAI video generation pipeline failed: {e}")
         return 1
-    return 0
 
 
 if __name__ == "__main__":

@@ -2,3 +2,8 @@ openai
 python-dotenv
 fal-client
 requests
+crewai
+moviepy
+ffmpeg-python
+pathlib
+typing

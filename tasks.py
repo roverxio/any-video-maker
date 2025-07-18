@@ -7,6 +7,7 @@ from crewai import Task
 from typing import Dict, Any, Optional
 import logging
 import json
+import re
 
 
 class VideoTasks:
@@ -40,7 +41,7 @@ class VideoTasks:
 
             * **CRITICAL: Explicitly mention the reference image (logo/product/brand element/person/location) in your scene descriptions** when it should appear. Use clear phrases like "the logo appears", "logo integrates into", "product is shown", "brand symbol visible", etc. This ensures proper detection in later processing steps.
 
-            * **Structure the summary with separate scenes** that flow logically from one to another.
+            * **Structure the summary with 3-5 separate scenes** that flow logically from one to another. Each scene should focus on a different aspect or moment of the video.
 
             * **Include directorial elements** such as camera angles, lighting, and character expressions to create rich, descriptive visuals.
 
@@ -50,12 +51,15 @@ class VideoTasks:
 
             * **Final summary length**: ideally **3–5 scenes**, each with 1–2 sentences. Every scene should contain actual video content, not meta-elements.
 
-            * **Write each scene as a flowing paragraph** that naturally incorporates visual elements, camera movements, and directorial details. Do NOT use bullet points, subsections, or formatted labels like "Visual:" or "Camera Angle:". Each scene should read as a cohesive description.
+            * **CRITICAL: Create SEPARATE scenes, not one long description**. Each scene is a distinct moment in the video with its own focus and duration.
+
+            * **Write each scene as its own paragraph** that naturally incorporates visual elements, camera movements, and directorial details. Do NOT use bullet points, subsections, or formatted labels like "Visual:" or "Camera Angle:". Each scene should read as a cohesive description.
 
             * **Include duration estimates** for each scene in square brackets at the end, based on content complexity:
-              - Simple shots/transitions: [3-5s]
+              - Simple shots/transitions: [2-3s]
               - Standard scenes: [5-7s]
               - Complex multi-element scenes: [7-10s]
+              - Total video should be 15-40 seconds across all scenes
 
             ## Aspect Ratio Rules
 
@@ -84,7 +88,11 @@ class VideoTasks:
 
             Scene 2: Another flowing description without subsections or labels. [7s]
 
-            (Continue for all scenes)
+            Scene 3: Yet another distinct scene with its own focus. [7s]
+
+            Scene 4: Final scene bringing closure to the video. [7s]
+
+            IMPORTANT: Each scene must be labeled "Scene 1:", "Scene 2:", etc. and end with duration in brackets.
             
             OUTPUT FORMAT:
             Return a JSON object with the following structure:
@@ -123,67 +131,37 @@ class VideoTasks:
             - Visual Summary: {summary_result.get('visual_summary', 'N/A')}
             - Video Config: {json.dumps(summary_result.get('video_config', {}), indent=2)}
             
-            TASK REQUIREMENTS:
+            ## AUTO-DETECT VOICEOVER STYLE
             
-            ## Style Auto-Detection
-            Analyze the video summary to determine the most appropriate voiceover style:
-            - Product showcase/advertisement → **Promotional style** (excited but genuine)
-            - Educational/places/processes → **Documentary style** (natural wisdom)
-            - Characters/emotional journey → **Storytelling style** (intimate, personal)
-            - Artistic/abstract content → **Minimal style** (sparse, poetic)
-            - General content → **Narrator style** (friendly, conversational)
+            Analyze the video content and select the appropriate style:
+            - **Product showcase/advertisement** → Promotional style
+            - **Educational/places/processes** → Documentary style  
+            - **Characters/emotional journey** → Storytelling style
+            - **Artistic/abstract content** → Minimal style
+            - **General content** → Narrator style
             
-            ## Voiceover Style Guidelines
+            ## STYLE EXAMPLES
             
-            **NARRATOR STYLE** - General friendly narration:
-            - "Whoa, look at that..." or "Okay, so here's what happens..."
-            - Conversational, warm, engaging
+            **Promotional**: "Okay, check this out..." | "You're gonna love this part"
+            **Documentary**: "You see, what's happening here is..." | "Now this... this is interesting."  
+            **Storytelling**: "So there I was..." | "And then, out of nowhere..."
+            **Minimal**: "Rain falls." | Single powerful phrases
+            **Narrator**: "Whoa, look at that..." | "Okay, so here's what happens..."
             
-            **DOCUMENTARY STYLE** - Natural documentary narration:
-            - "You see, what's happening here is..."
-            - "Now this... this is interesting."
-            - Wisdom and gentle insights
+            ## REQUIREMENTS
             
-            **PROMOTIONAL STYLE** - Genuine enthusiasm:
-            - "Okay, check this out..."
-            - "You're gonna love this part"
-            - Real excitement, not fake hype
+            **Natural Speech**: Write like talking to a friend, not reading ad copy. Use authentic conversational language.
             
-            **STORYTELLING STYLE** - Intimate narrative:
-            - "So there I was..."
-            - "And then, out of nowhere..."
-            - Personal and emotional
+            **Timing**: Extract scene durations from summary and match word count:
+            - [3s] scenes = max 7-8 words
+            - [5s] scenes = max 12-13 words  
+            - [7s] scenes = max 17-18 words
+            - [10s] scenes = max 25 words
             
-            **MINIMAL STYLE** - Sparse and poetic:
-            - Single powerful phrases
-            - "Rain falls."
-            - Let silence speak
+            **Scene Matching**: Match voiceover content to each scene's visual elements and emotional tone.
             
-            ## Critical Requirements
-            
-            **NATURAL SPEECH PATTERNS:**
-            - Write like you're talking to a friend, not reading ad copy.
-            - Use casual, authentic language with natural speech patterns
-            - Include hesitations, emphasis, and conversational rhythm
-            - Avoid perfect grammar - use how people actually speak
-            - Include personal touches and relatable observations
-            - Sound like someone genuinely excited about sharing something cool
-
-            
-            **TIMING CONSTRAINTS:**
-            Extract scene durations from the visual summary and match word count:
-            - For [3s] scenes = max 7-8 words
-            - For [5s] scenes = max 12-13 words  
-            - For [7s] scenes = max 17-18 words
-            - For [10s] scenes = max 25 words
-            
-            **SCENE MATCHING:**
-            - Match voiceover content to each scene's visual elements
-            - Ensure emotional tone aligns with scene mood
-            - Consider pacing and natural speech rhythm
-            
-            OUTPUT FORMAT:
-            Return a JSON object with the following structure:
+            ## OUTPUT FORMAT
+            Return ONLY this JSON structure:
             {{
                 "voiceover_generation": {{
                     "detected_style": "promotional/documentary/storytelling/minimal/narrator",
@@ -204,13 +182,7 @@ class VideoTasks:
                 }}
             }}
             
-            IMPORTANT:
-            - Generate voiceover for EVERY scene identified in the visual summary
-            - Ensure word count matches scene duration constraints
-            - Use natural, conversational language that sounds authentic
-            - Avoid marketing jargon or overly polished copy
-            - Make each scene's voiceover complement its visual content
-            - Return ONLY the JSON object, no additional text
+            CRITICAL: Generate voiceover for EVERY scene. Ensure word count matches duration. Use natural language. Return ONLY valid JSON.
             """,
             
             agent=agent,
@@ -228,18 +200,48 @@ class VideoTasks:
             - Voiceover Data: {json.dumps(summary_result.get('voiceover_scenes', []), indent=2)}
             - Video Config: {json.dumps(summary_result.get('video_config', {}), indent=2)}
 
-SCENE COMPOSITION EXAMPLES FROM YOUR SUMMARY:
-Scene 1: "close-up of headphones" + "camera pulls back revealing people" + "sound waves emanate" + "logo integrates" = MONTAGE (4 distinct visual elements)
-- Shot 1: Close-up of headphones
-- Shot 2: Pull back to reveal people
-- Shot 3: Sound waves visual effect
-- Shot 4: Logo integration
+## CRITICAL INSTRUCTIONS (READ FIRST)
 
-REFERENCE IMAGE DETECTION EXAMPLES:
-- If reference is a logo: "The company logo subtly integrates into the sound waves" → has_reference: true
-- If reference is a person: "Sarah walks into frame" (where Sarah is the reference person) → has_reference: true
-- If reference is a location: "The Golden Gate Bridge spans across the bay" (where bridge is reference) → has_reference: true
-- "people wearing headphones" → has_reference: false (unless the headphones/logo are explicitly mentioned as appearing)
+### 1. REFERENCE IMAGE DETECTION
+The reference image can be ANYTHING: logo, product, person, location, artwork, object, brand element, etc.
+
+**LOOK FOR THESE PHRASES in the summary:**
+- "logo appears", "logo integrates", "logo visible"
+- "product shown", "product displayed", "featuring the product"
+- "brand symbol", "brand element", "company logo"
+- "the [reference] appears", "shows the [reference]"
+- Any direct mention of the reference image being visible
+
+**CRITICAL**: Evaluate EACH shot independently. Just because one shot has the reference doesn't mean all shots do.
+
+### 2. IMAGE PROMPT REQUIREMENTS
+
+**COMPLETE FRAME DESCRIPTION RULE**: Your image prompt MUST include ALL visual elements mentioned in that part of the scene.
+
+**CHECKLIST for each image prompt:**
+- ✓ Is the main subject included?
+- ✓ Is the background/setting described?
+- ✓ Are ALL visual elements from the summary included?
+- ✓ If reference is mentioned, is it in the prompt?
+- ✓ Is it purely static (no motion words)?
+
+**COMMON MISTAKES TO AVOID:**
+❌ Missing the reference when it's mentioned in the summary
+❌ Describing only part of the visual (e.g., just sound waves without the person)
+❌ Using motion words in image prompts
+❌ Not including the logo/product/person/location/subject/reference when the summary says it appears
+
+### 3. SCENE COMPOSITION RULES
+
+SCENE COMPOSITION EXAMPLES:
+- Multiple distinct visual elements in one scene = MONTAGE
+- Camera movement revealing new subjects = MONTAGE  
+- Single continuous action = SINGLE_SHOT
+
+REFERENCE IMAGE DETECTION:
+- Each shot independently evaluated
+- Only mark has_reference: true if that specific shot mentions the reference image
+- Don't propagate has_reference across all shots in a scene
 
 REQUIRED JSON STRUCTURE:
 {{
@@ -290,66 +292,182 @@ CRITICAL JSON REQUIREMENTS:
 - Ensure all quotes, brackets, and braces are properly matched
 - Validate JSON syntax before returning
 
-INSTRUCTIONS:
-1. Analyze the visual summary to extract individual scenes with their descriptions and durations
-2. Match voiceover text to appropriate scenes based on content and timing
-3. Image prompts should feature detailed descriptions (eg: "a young woman wearing a dress..." instead of "a person...")
-4. REFERENCE IMAGE DETECTION - Only set has_reference=true when the summary EXPLICITLY mentions the reference image:
-   - The reference could be ANYTHING: logo, product, person, location, artwork, object, etc.
-   - Look for direct mentions of the reference appearing/being shown in the scene
-   - DO NOT assume the reference is shown just because related content appears
-5. Set "has_reference" to true ONLY for scenes/shots where the reference image is EXPLICITLY mentioned in the summary text
-6. Incorporate the reference image description into image prompts when has_reference is true
-7. SCENE COMPOSITION ANALYSIS:
-   - "single_shot": ONLY use when the scene is ONE continuous action/view with no transitions
-   - "montage": Use when scene contains:
-     * Multiple distinct visual elements or shots
-     * Camera movements that reveal new subjects (e.g. "pulls back to reveal")
-     * Transitions between different views or subjects
-     * Multiple actions happening in sequence
-     * Any mention of "transitions to", "shifts to", "cuts to"
-8. For SINGLE_SHOT scenes: Include "image_prompt", "action_prompt", and "has_reference" at the scene level, do NOT include "shots" array
-9. For MONTAGE scenes: Include "shots" array with individual shots, each having shot_id, has_reference, frame_duration, image_prompt, and action_prompt. The sum of all frame_durations MUST equal the scene duration. Do NOT include scene-level image_prompt/action_prompt
-10. For MONTAGE scenes: Break down the scene description into distinct visual moments, each becoming a separate shot
-11. For MONTAGE scenes: The ideal duration for each shot is 1-3 seconds (max 3 seconds per shot!)
-12. Voiceover text always stays at the scene level, never at the shot level
-13. IMAGE PROMPTS - Create STATIC image descriptions for AI generation:
+## STEP-BY-STEP INSTRUCTIONS:
+
+1. **Extract scenes** from the visual summary with descriptions and durations
+
+2. **For EACH scene part, check for reference mentions:**
+   - Does this specific part mention the logo/product/reference appearing?
+   - If yes → has_reference: true for that shot
+   - If no → has_reference: false
+
+3. **Create COMPLETE image prompts:**
+   - Start with the main subject
+   - Add the setting/background
+   - Include ALL visual elements mentioned
+   - If reference mentioned, describe it clearly
+   - Use ONLY static descriptions
+
+4. **Match voiceover** text to scenes based on content and timing
+
+5. **Determine scene composition:**
+   - "single_shot": ONE continuous action/view with no transitions
+   - "montage": Multiple shots, camera reveals, or transitions
+
+6. For SINGLE_SHOT scenes: Include "image_prompt", "action_prompt", and "has_reference" at the scene level, do NOT include "shots" array
+
+7. For MONTAGE scenes: Include "shots" array with individual shots, each having shot_id (starting from "shot_1" for each scene), has_reference, frame_duration, image_prompt, and action_prompt. The sum of all frame_durations MUST equal the scene duration. Do NOT include scene-level image_prompt/action_prompt
+
+8. For MONTAGE scenes: Break down the scene description into distinct visual moments, each becoming a separate shot
+
+9. For MONTAGE scenes: The ideal duration for each shot is 1-3 seconds (max 3 seconds per shot!)
+
+10. Voiceover text always stays at the scene level, never at the shot level
+
+11. **IMAGE PROMPTS - Create STATIC image descriptions:**
     - Describe ONLY what's visible in a single frame/moment
     - Include specific details: age, clothing, setting, lighting, camera angle
     - Example: "Medium shot of a young woman in her 20s wearing casual blue jeans and white t-shirt, sitting in a modern minimalist office, soft natural lighting from window, warm color tones"
     - NEVER include motion words like "dancing", "moving", "transitioning", "appearing"
     - NEVER include temporal descriptions like "begins to", "starts", "then"
-14. ACTION PROMPTS - Describe motion/animation for EXISTING elements in the image:
+
+12. **ACTION PROMPTS - Describe motion/animation:**
     - CRITICAL: Can ONLY animate what's already visible in the static image
     - Good: "The woman dances energetically" (if woman is in the image)
     - Bad: "Logo elements fade in around her" (if logo wasn't in the original image)
     - Include camera movements: "camera slowly pulls back"
     - Focus on subject motion and camera movement only
-15. Set video configuration parameters based on the content type and user request
-16. Ensure timestamps are accurate and scenes flow logically
-17. Make voice characteristics and music descriptions detailed and contextually appropriate
 
-EXAMPLE ANALYSIS:
+13. Set video configuration parameters based on content type
+
+14. Ensure timestamps are accurate and scenes flow logically
+
+15. Make voice characteristics and music descriptions detailed and contextually appropriate
+
+## SELF-CHECK BEFORE RETURNING:
+- [ ] Did I check EACH shot for reference mentions?
+- [ ] Do ALL my image prompts include EVERY visual element from the summary?
+- [ ] Are my image prompts 100% static (no motion words)?
+- [ ] If the summary mentions logo/product appearing, is has_reference: true?
+- [ ] Is my JSON valid with no trailing commas?
+
+## EXAMPLE ANALYSIS:
 - "Close-up of headphones, camera pulls back revealing people" = MONTAGE (2+ distinct views)
 - "Person walks across a room" = SINGLE_SHOT (one continuous action)
 - "Logo appears in the scene" = has_reference: true
+- "The logo subtly integrates into the sound waves" = has_reference: true
 
-IMAGE PROMPT EXAMPLES (static descriptions only):
-❌ BAD: "A person dances with energy as the logo flashes"
-✅ GOOD: "Wide shot of a young woman in her early 20s wearing bright yellow athletic wear and white sneakers, standing in a modern dance studio with wooden floors and mirrors, dramatic side lighting creating shadows"
+## IMAGE PROMPT EXAMPLES:
 
-ACTION PROMPT EXAMPLES (motion descriptions):
+**GOOD COMPLETE PROMPT** (includes all elements):
+✅ "Wide shot of a young woman in her early 20s wearing bright yellow athletic wear, standing in a modern dance studio with wooden floors. Colorful sound wave patterns flow around her in vibrant blues and purples. The company logo is integrated into the flowing patterns in the upper right."
+
+**BAD INCOMPLETE PROMPT** (missing elements):
+❌ "Close-up of sound waves in vibrant colors"
+(Missing: the person, the setting, the logo if mentioned)
+
+**ACTION PROMPT EXAMPLES:**
 ❌ BAD: "She begins dancing energetically, the camera slowly pulls back as animated logo elements fade in around her"
 ✅ GOOD: "The woman dances energetically as the camera slowly pulls back"
-
-Be intelligent about scene analysis - consider narrative structure, emotional flow, and production requirements. 
 
 CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explanations. The response must be parseable JSON.
             """,
             
             agent=agent,
-            expected_output="Structured JSON script optimized for automated video production"
+            expected_output="Structured JSON script optimized for automated video production",
+            callback=lambda result: self._validate_and_fix_script(
+                str(result), 
+                summary_result.get('visual_summary', ''), 
+                reference_url
+            )
         )
+    
+    def _validate_and_fix_script(self, script_result: str, visual_summary: str, reference_url: str = None) -> str:
+        """
+        Post-process script to fix reference detection and image prompt issues
+        """
+        try:
+            # Parse the script JSON
+            script_data = json.loads(script_result)
+            
+            self.logger.info("Starting post-processing validation of generated script...")
+            
+            # Extract scene descriptions from visual summary
+            scene_patterns = re.findall(r'Scene \d+:(.*?)(?=Scene \d+:|$)', visual_summary, re.DOTALL)
+            
+            # Reference detection keywords
+            reference_keywords = [
+                'logo appears', 'logo integrates', 'logo visible', 'logo subtly',
+                'product shown', 'product displayed', 'featuring the product',
+                'brand symbol', 'brand element', 'company logo',
+                'reference appears', 'reference shown', 'reference image',
+                'appears in', 'integrates into', 'becomes part of', 'visible in'
+            ]
+            
+            fixed_count = 0
+            
+            # Process each scene
+            for i, scene in enumerate(script_data.get('scenes', [])):
+                scene_num = i + 1
+                scene_description = scene_patterns[i] if i < len(scene_patterns) else ""
+                
+                self.logger.debug(f"Processing Scene {scene_num}: {scene_description[:100]}...")
+                
+                # Check if reference is mentioned in this scene description
+                has_reference_in_description = any(keyword.lower() in scene_description.lower() for keyword in reference_keywords)
+                
+                if scene.get('scene_composition') == 'single_shot':
+                    # Fix single shot scene
+                    current_has_ref = scene.get('has_reference', False)
+                    if has_reference_in_description and not current_has_ref:
+                        scene['has_reference'] = True
+                        self.logger.info(f"Fixed Scene {scene_num}: Set has_reference=True")
+                        fixed_count += 1
+                    
+                    # Fix image prompt if reference mentioned but missing from prompt
+                    if has_reference_in_description and reference_url:
+                        image_prompt = scene.get('image_prompt', '')
+                        if 'logo' not in image_prompt.lower() and 'brand' not in image_prompt.lower():
+                            # Add reference to image prompt
+                            scene['image_prompt'] = f"{image_prompt.rstrip('.')}. The company logo is visible in the scene."
+                            self.logger.info(f"Fixed Scene {scene_num}: Added reference to image prompt")
+                            fixed_count += 1
+                
+                elif scene.get('scene_composition') == 'montage':
+                    # Fix montage shots
+                    shots = scene.get('shots', [])
+                    for j, shot in enumerate(shots):
+                        shot_num = j + 1
+                        
+                        # For montage, we need to check which part of the scene this shot represents
+                        # Simple heuristic: if reference mentioned in scene and this is the later shot, likely has reference
+                        current_has_ref = shot.get('has_reference', False)
+                        
+                        if has_reference_in_description and not current_has_ref:
+                            # Check if this shot should have the reference (heuristic: later shots more likely)
+                            if j >= len(shots) // 2:  # Second half of shots more likely to have reference
+                                shot['has_reference'] = True
+                                self.logger.info(f"Fixed Scene {scene_num} Shot {shot_num}: Set has_reference=True")
+                                fixed_count += 1
+                        
+                        # Fix image prompt if reference mentioned but missing from prompt
+                        if has_reference_in_description and reference_url and shot.get('has_reference', False):
+                            image_prompt = shot.get('image_prompt', '')
+                            if 'logo' not in image_prompt.lower() and 'brand' not in image_prompt.lower():
+                                # Add reference to image prompt
+                                shot['image_prompt'] = f"{image_prompt.rstrip('.')}. The company logo is visible in the frame."
+                                self.logger.info(f"Fixed Scene {scene_num} Shot {shot_num}: Added reference to image prompt")
+                                fixed_count += 1
+            
+            self.logger.info(f"Post-processing completed. Fixed {fixed_count} issues.")
+            return json.dumps(script_data, indent=2)
+            
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse script JSON for validation: {e}")
+            return script_result  # Return original if parsing fails
+        except Exception as e:
+            self.logger.error(f"Error during script validation: {e}")
+            return script_result  # Return original if validation fails
     
     def create_voice_selection_task(self, agent, script_result: Dict[str, Any], 
                                    user_prompt: str, reference_url: Optional[str] = None) -> Task:

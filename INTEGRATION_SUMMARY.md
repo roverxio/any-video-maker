@@ -1,5 +1,13 @@
 # Media Generation Integration Summary
 
+## CHANGES FROM media-generation-clean branch
+- Not using crewai agent for media generation tasks (Do not require intelligence, so making direct API calls)
+- Improved logic for video summary and script generation
+  - We need to keep in mind that crewai is now adding a lot more info to the API calls
+  - There were conflicting and repeting instructions between agent role/goal/backstory and system prompt
+  - There was also a bias towards advertisements being caused by the agents' backstories
+
+
 ## Overview
 Successfully integrated media generation into the CrewAI workflow, creating a complete end-to-end video production pipeline.
 

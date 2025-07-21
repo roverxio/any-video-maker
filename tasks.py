@@ -577,11 +577,19 @@ CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explana
                     image_prompt = scene.get('image_prompt', '')
                     should_have_reference = reference_variable_name and reference_variable_name.lower() in image_prompt.lower()
                     
-                    current_has_ref = scene.get('has_reference', False)
-                    if should_have_reference != current_has_ref:
+                    # Check if has_reference field exists and if it has the correct value
+                    if 'has_reference' not in scene:
+                        # Field is missing, add it
                         scene['has_reference'] = should_have_reference
-                        self.logger.info(f"Fixed Scene {scene_num}: Set has_reference={should_have_reference} based on variable_name presence in image_prompt")
+                        self.logger.info(f"Fixed Scene {scene_num}: Added missing has_reference={should_have_reference}")
                         fixed_count += 1
+                    else:
+                        # Field exists, check if value is correct
+                        current_has_ref = scene.get('has_reference', False)
+                        if should_have_reference != current_has_ref:
+                            scene['has_reference'] = should_have_reference
+                            self.logger.info(f"Fixed Scene {scene_num}: Set has_reference={should_have_reference} based on variable_name presence in image_prompt")
+                            fixed_count += 1
                 
                 elif scene.get('scene_composition') == 'montage':
                     # Fix montage shots
@@ -593,11 +601,19 @@ CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explana
                         image_prompt = shot.get('image_prompt', '')
                         should_have_reference = reference_variable_name and reference_variable_name.lower() in image_prompt.lower()
                         
-                        current_has_ref = shot.get('has_reference', False)
-                        if should_have_reference != current_has_ref:
+                        # Check if has_reference field exists and if it has the correct value
+                        if 'has_reference' not in shot:
+                            # Field is missing, add it
                             shot['has_reference'] = should_have_reference
-                            self.logger.info(f"Fixed Scene {scene_num} Shot {shot_num}: Set has_reference={should_have_reference} based on variable_name presence in image_prompt")
+                            self.logger.info(f"Fixed Scene {scene_num} Shot {shot_num}: Added missing has_reference={should_have_reference}")
                             fixed_count += 1
+                        else:
+                            # Field exists, check if value is correct
+                            current_has_ref = shot.get('has_reference', False)
+                            if should_have_reference != current_has_ref:
+                                shot['has_reference'] = should_have_reference
+                                self.logger.info(f"Fixed Scene {scene_num} Shot {shot_num}: Set has_reference={should_have_reference} based on variable_name presence in image_prompt")
+                                fixed_count += 1
             
             self.logger.info(f"Post-processing completed. Fixed {fixed_count} issues.")
             return json.dumps(script_data, indent=2)

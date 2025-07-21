@@ -1,6 +1,0 @@
-2025-07-21 17:22:21,572 - any_video_maker - INFO - Starting Image Description Test
-2025-07-21 17:22:21,575 - any_video_maker - INFO - Testing image description for URL: https://redernet-image-data.s3.amazonaws.com/stg/input_images/controlnet/ast_PxxAMNOnfW
-2025-07-21 17:22:25,026 - any_video_maker - INFO - Image description test completed successfully
-2025-07-21 17:24:23,167 - any_video_maker - INFO - Starting Image Description Test
-2025-07-21 17:24:23,170 - any_video_maker - INFO - Testing image description for URL: https://redernet-image-data.s3.amazonaws.com/stg/input_images/controlnet/ast_PxxAMNOnfW
-2025-07-21 17:24:26,917 - any_video_maker - INFO - Image description test completed successfully

@@ -7,6 +7,7 @@ import time
 import asyncio
 import logging
 import base64
+import json
 from pathlib import Path
 from typing import Dict, Any, List, Optional
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -67,6 +68,66 @@ class MediaGenerator:
         self.logger.info("Media generation completed successfully")
         return media_files
     
+    def _load_image_description_data(self) -> Optional[Dict[str, Any]]:
+        """Load image description data from the run folder"""
+        try:
+            image_desc_file = self.run_folder / "video_scripts" / "image_description.json"
+            if not image_desc_file.exists():
+                self.logger.debug(f"No image_description.json found at {image_desc_file}")
+                return None
+            
+            with open(image_desc_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            
+            # Validate structure
+            if "image_description" not in data:
+                self.logger.warning(f"Invalid image_description.json structure - missing 'image_description' key")
+                return None
+            
+            image_desc = data["image_description"]
+            if "variable_name" not in image_desc or "short_description" not in image_desc:
+                self.logger.warning(f"Invalid image_description.json structure - missing required keys")
+                return None
+            
+            self.logger.debug(f"Loaded image description: variable_name='{image_desc['variable_name']}', short_description='{image_desc['short_description']}'")
+            return image_desc
+            
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse image_description.json: {e}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Failed to load image_description.json: {e}")
+            return None
+    
+    def _replace_variable_in_prompt(self, prompt: str, image_desc_data: Dict[str, Any]) -> str:
+        """Replace variable name with short description in the prompt"""
+        if not image_desc_data:
+            return prompt
+        
+        variable_name = image_desc_data["variable_name"]
+        short_description = image_desc_data["short_description"]
+        
+        original_prompt = prompt
+        
+        # Replace variable name in backticks (e.g., `chanel_perfume_bottle`)
+        prompt = prompt.replace(f"`{variable_name}`", short_description)
+        
+        # Replace variable name in single quotes (e.g., 'chanel_perfume_bottle')
+        prompt = prompt.replace(f"'{variable_name}'", short_description)
+        
+        # Replace variable name as direct string (case-sensitive exact match)
+        # Use word boundaries to avoid partial replacements
+        import re
+        pattern = r'\b' + re.escape(variable_name) + r'\b'
+        prompt = re.sub(pattern, short_description, prompt)
+        
+        if prompt != original_prompt:
+            self.logger.info(f"Replaced '{variable_name}' with '{short_description}' in image prompt")
+            self.logger.debug(f"Original prompt: {original_prompt}")
+            self.logger.debug(f"Modified prompt: {prompt}")
+        
+        return prompt
+
     def _generate_all_images(self, script_data: Dict[str, Any], reference_path: Optional[Path] = None) -> Dict[str, Path]:
         """Generate all images concurrently"""
         
@@ -163,6 +224,11 @@ class MediaGenerator:
         reference_path = task["reference_path"]
         aspect_ratio = task["aspect_ratio"]
         log_id = task["log_id"]
+
+        # Load image description data and replace variable names in prompt
+        image_desc_data = self._load_image_description_data()
+        if image_desc_data:
+            prompt = self._replace_variable_in_prompt(prompt, image_desc_data)
 
         aspect_ratio_map = {
             "16:9": "landscape_16_9",

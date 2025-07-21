@@ -119,7 +119,7 @@ class VideoGenerationCrew:
             
             # Step 3: Generate Script
             script_task = self.tasks.create_script_generation_task(
-                script_agent, summary_data, voiceover_data, reference_url
+                script_agent, summary_data, voiceover_data, reference_image_variable
             )
             
             script_crew = Crew(

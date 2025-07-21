@@ -38,12 +38,13 @@ class VideoTasks:
         
         **Variable Name Rules:**
         - Use snake_case format (lowercase with underscores)
+        - DO NOT include brand names. Use generic names for the main subject (eg: "running_shoe" instead of "nike_running_shoe")
         - Make it descriptive but concise (2-4 words typically)
         - Focus on the primary subject or key characteristic
         - Examples: "corporate_headshot", "mountain_landscape", "tech_startup_logo", "vintage_car_photo"
         
         **Short Description Rules:**
-        - 5-15 words maximum
+        - 5-10 words maximum
         - Capture only main focus of the image, not the entire image
         - Do not describe the background or any other elements apart from the main focus
         - Be specific about key visual elements of the main subject
@@ -329,7 +330,7 @@ class VideoTasks:
         )
     
     def create_script_generation_task(self, agent, summary_result: Dict[str, Any], 
-                                     voiceover_result: Dict[str, Any], reference_url: Optional[str] = None) -> Task:
+                                     voiceover_result: Dict[str, Any], reference_variable_name: Optional[str] = None) -> Task:
         """Create the video script generation task"""
         
         # Extract voiceover data properly from the voiceover_generation task output
@@ -340,21 +341,25 @@ class VideoTasks:
             description=f"""
             INPUT DATA:
             - Video Summary: {summary_result.get('visual_summary', 'N/A')}
-            - Reference Image URL: {reference_url or "None provided"}
+            - Reference Image Variable Name: {reference_variable_name or "None provided"}
             - Voiceover Data: {json.dumps(voiceover_scenes, indent=2)}
             - Voiceover Style: {voiceover_data.get('detected_style', 'N/A')}
             - Video Config: {json.dumps(summary_result.get('video_config', {}), indent=2)}
 
 ## CRITICAL INSTRUCTIONS (READ FIRST)
 
-### 1. REFERENCE IMAGE DETECTION
+### 1. REFERENCE IMAGE DETECTION AND VARIABLE NAME USAGE
 The reference image can be ANYTHING: logo, product, person, location, artwork, object, brand element, etc.
+The reference image variable name is: `{reference_variable_name or 'reference_image'}`
+
+**CRITICAL: When mentioning the reference image in prompts and descriptions, ALWAYS use the exact variable name `{reference_variable_name}` (if provided).**
 
 **LOOK FOR THESE PHRASES in the summary:**
 - "logo appears", "logo integrates", "logo visible"
 - "product shown", "product displayed", "featuring the product"
 - "brand symbol", "brand element", "company logo"
 - "the [reference] appears", "shows the [reference]"
+- "the `{reference_variable_name}` appears", "shows the `{reference_variable_name}`"
 - Any direct mention of the reference image being visible
 
 **CRITICAL**: Evaluate EACH shot independently. Just because one shot has the reference doesn't mean all shots do.
@@ -363,18 +368,23 @@ The reference image can be ANYTHING: logo, product, person, location, artwork, o
 
 **COMPLETE FRAME DESCRIPTION RULE**: Your image prompt MUST include ALL visual elements mentioned in that part of the scene.
 
+**WHEN REFERENCE IMAGE IS MENTIONED:**
+- Use the exact variable name in the prompt: "The `{reference_variable_name}` is visible..."
+- NOT: "The logo is visible..." or "The product is visible..."
+- ALWAYS: "The `{reference_variable_name}` is visible..."
+
 **CHECKLIST for each image prompt:**
-- ✓ Is the main subject included?
 - ✓ Is the background/setting described?
 - ✓ Are ALL visual elements from the summary included?
 - ✓ If reference is mentioned, is it in the prompt?
 - ✓ Is it purely static (no motion words)?
 
 **COMMON MISTAKES TO AVOID:**
-❌ Missing the reference when it's mentioned in the summary
+❌ Missing the variable_name when it's mentioned in the summary
+❌ Using generic terms like "logo" or "product" instead of the variable_name
 ❌ Describing only part of the visual (e.g., just sound waves without the person)
 ❌ Using motion words in image prompts
-❌ Not including the logo/product/person/location/subject/reference when the summary says it appears
+❌ Not including the variable_name in the image prompt when the summary says it appears
 
 ### 3. SCENE COMPOSITION RULES
 
@@ -518,11 +528,15 @@ CRITICAL JSON REQUIREMENTS:
 ## IMAGE PROMPT EXAMPLES:
 
 **GOOD COMPLETE PROMPT** (includes all elements):
-✅ "Wide shot of a young woman in her early 20s wearing bright yellow athletic wear, standing in a modern dance studio with wooden floors. Colorful sound wave patterns flow around her in vibrant blues and purples. The company logo is integrated into the flowing patterns in the upper right."
+✅ "Wide shot of a young woman in her early 20s wearing bright yellow athletic wear, standing in a modern dance studio with wooden floors. Colorful sound wave patterns flow around her in vibrant blues and purples. The `{reference_variable_name}` is integrated into the flowing patterns in the upper right."
 
 **BAD INCOMPLETE PROMPT** (missing elements):
 ❌ "Close-up of sound waves in vibrant colors"
-(Missing: the person, the setting, the logo if mentioned)
+(Missing: the person, the setting, the `{reference_variable_name}` if mentioned)
+
+**ALSO BAD** (using generic terms):
+❌ "The company logo is visible in the scene"
+(Should use: "The `{reference_variable_name}` is visible in the scene")
 
 **ACTION PROMPT EXAMPLES:**
 ❌ BAD: "She begins dancing energetically, the camera slowly pulls back as animated logo elements fade in around her"
@@ -536,11 +550,11 @@ CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explana
             callback=lambda result: self._validate_and_fix_script(
                 str(result), 
                 summary_result.get('visual_summary', ''), 
-                reference_url
+                reference_variable_name
             )
         )
     
-    def _validate_and_fix_script(self, script_result: str, visual_summary: str, reference_url: str = None) -> str:
+    def _validate_and_fix_script(self, script_result: str, visual_summary: str, reference_variable_name: Optional[str] = None) -> str:
         """
         Post-process script to fix reference detection and image prompt issues
         """
@@ -550,46 +564,24 @@ CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explana
             
             self.logger.info("Starting post-processing validation of generated script...")
             
-            # Extract scene descriptions from visual summary
-            scene_patterns = re.findall(r'Scene \d+:(.*?)(?=Scene \d+:|$)', visual_summary, re.DOTALL)
-            
-            # Reference detection keywords
-            reference_keywords = [
-                'logo appears', 'logo integrates', 'logo visible', 'logo subtly',
-                'product shown', 'product displayed', 'featuring the product',
-                'brand symbol', 'brand element', 'company logo',
-                'reference appears', 'reference shown', 'reference image',
-                'appears in', 'integrates into', 'becomes part of', 'visible in'
-            ]
-            
             fixed_count = 0
             
             # Process each scene
             for i, scene in enumerate(script_data.get('scenes', [])):
                 scene_num = i + 1
-                scene_description = scene_patterns[i] if i < len(scene_patterns) else ""
                 
-                self.logger.debug(f"Processing Scene {scene_num}: {scene_description[:100]}...")
-                
-                # Check if reference is mentioned in this scene description
-                has_reference_in_description = any(keyword.lower() in scene_description.lower() for keyword in reference_keywords)
+                self.logger.debug(f"Processing Scene {scene_num}")
                 
                 if scene.get('scene_composition') == 'single_shot':
-                    # Fix single shot scene
-                    current_has_ref = scene.get('has_reference', False)
-                    if has_reference_in_description and not current_has_ref:
-                        scene['has_reference'] = True
-                        self.logger.info(f"Fixed Scene {scene_num}: Set has_reference=True")
-                        fixed_count += 1
+                    # Check if variable_name is in the image prompt
+                    image_prompt = scene.get('image_prompt', '')
+                    should_have_reference = reference_variable_name and reference_variable_name.lower() in image_prompt.lower()
                     
-                    # Fix image prompt if reference mentioned but missing from prompt
-                    if has_reference_in_description and reference_url:
-                        image_prompt = scene.get('image_prompt', '')
-                        if 'logo' not in image_prompt.lower() and 'brand' not in image_prompt.lower():
-                            # Add reference to image prompt
-                            scene['image_prompt'] = f"{image_prompt.rstrip('.')}. The company logo is visible in the scene."
-                            self.logger.info(f"Fixed Scene {scene_num}: Added reference to image prompt")
-                            fixed_count += 1
+                    current_has_ref = scene.get('has_reference', False)
+                    if should_have_reference != current_has_ref:
+                        scene['has_reference'] = should_have_reference
+                        self.logger.info(f"Fixed Scene {scene_num}: Set has_reference={should_have_reference} based on variable_name presence in image_prompt")
+                        fixed_count += 1
                 
                 elif scene.get('scene_composition') == 'montage':
                     # Fix montage shots
@@ -597,25 +589,15 @@ CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explana
                     for j, shot in enumerate(shots):
                         shot_num = j + 1
                         
-                        # For montage, we need to check which part of the scene this shot represents
-                        # Simple heuristic: if reference mentioned in scene and this is the later shot, likely has reference
+                        # Check if variable_name is in the image prompt
+                        image_prompt = shot.get('image_prompt', '')
+                        should_have_reference = reference_variable_name and reference_variable_name.lower() in image_prompt.lower()
+                        
                         current_has_ref = shot.get('has_reference', False)
-                        
-                        if has_reference_in_description and not current_has_ref:
-                            # Check if this shot should have the reference (heuristic: later shots more likely)
-                            if j >= len(shots) // 2:  # Second half of shots more likely to have reference
-                                shot['has_reference'] = True
-                                self.logger.info(f"Fixed Scene {scene_num} Shot {shot_num}: Set has_reference=True")
-                                fixed_count += 1
-                        
-                        # Fix image prompt if reference mentioned but missing from prompt
-                        if has_reference_in_description and reference_url and shot.get('has_reference', False):
-                            image_prompt = shot.get('image_prompt', '')
-                            if 'logo' not in image_prompt.lower() and 'brand' not in image_prompt.lower():
-                                # Add reference to image prompt
-                                shot['image_prompt'] = f"{image_prompt.rstrip('.')}. The company logo is visible in the frame."
-                                self.logger.info(f"Fixed Scene {scene_num} Shot {shot_num}: Added reference to image prompt")
-                                fixed_count += 1
+                        if should_have_reference != current_has_ref:
+                            shot['has_reference'] = should_have_reference
+                            self.logger.info(f"Fixed Scene {scene_num} Shot {shot_num}: Set has_reference={should_have_reference} based on variable_name presence in image_prompt")
+                            fixed_count += 1
             
             self.logger.info(f"Post-processing completed. Fixed {fixed_count} issues.")
             return json.dumps(script_data, indent=2)

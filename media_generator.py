@@ -901,9 +901,19 @@ class MediaGenerator:
             result = fal_client.submit(
                 "fal-ai/ace-step/prompt-to-audio",
                 arguments={
-                    "prompt": f"{music_description}, {total_duration} seconds duration",
-                    "duration_seconds": min(total_duration, 30),  # Limit to avoid long generation
-                    "sample_rate": 44100
+                    "prompt": f"Create instrumental background music: {music_description}. No lyrics or vocals. Duration: {total_duration} seconds",
+                    "instrumental": True,  # Ensure no lyrics
+                    "duration": total_duration,  # Duration in seconds
+                    "number_of_steps": 27,
+                    "scheduler": "euler",
+                    "guidance_type": "apg",
+                    "granularity_scale": 10,
+                    "guidance_interval": 0.5,
+                    "guidance_interval_decay": 0,
+                    "guidance_scale": 15,
+                    "minimum_guidance_scale": 3,
+                    "tag_guidance_scale": 5,
+                    "lyric_guidance_scale": 0  # Set to 0 to avoid lyric influence
                 }
             )
             

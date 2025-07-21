@@ -58,9 +58,30 @@ class VideoGenerationCrew:
             script_agent = self.agents.create_script_generator_agent()
             voice_agent = self.agents.create_voice_selection_agent()
             
+            # Step 0: Describe Reference Image (if provided)
+            image_description_data = None
+            if reference_url:
+                self.logger.info("Executing image description with direct Vision API...")
+                # Use direct OpenAI Vision API instead of CrewAI
+                image_description_data = self.tasks.describe_image_directly(
+                    reference_url, 
+                    self.config["OPENAI_API_KEY"]
+                )
+                
+                # Save image description results immediately
+                self._save_image_description_results(image_description_data, scripts_folder)
+            
             # Step 1: Generate Summary
+            # Extract both variable name and short description from image description data
+            reference_image_description = None
+            reference_image_variable = None
+            if image_description_data:
+                image_desc = image_description_data.get('image_description', {})
+                reference_image_description = image_desc.get('short_description')
+                reference_image_variable = image_desc.get('variable_name')
+            
             summary_task = self.tasks.create_summary_generation_task(
-                summary_agent, user_prompt, reference_url
+                summary_agent, user_prompt, reference_image_description, reference_image_variable
             )
             
             summary_crew = Crew(
@@ -146,6 +167,7 @@ class VideoGenerationCrew:
             
             # Combine all results
             complete_result = {
+                "image_description_result": image_description_data,
                 "summary_result": summary_data,
                 "voiceover_result": voiceover_data,
                 "script_result": final_script,
@@ -383,6 +405,19 @@ class VideoGenerationCrew:
             scripts_folder = output_folder / "video_scripts"
             scripts_folder.mkdir(exist_ok=True)
             
+            # Save image description results if present
+            image_description_result = results.get("image_description_result")
+            if image_description_result:
+                try:
+                    image_desc_file = scripts_folder / "image_description.json"
+                    with open(image_desc_file, 'w', encoding='utf-8') as f:
+                        json.dump(image_description_result, f, indent=2)
+                    self.logger.info(f"Saved image description to {image_desc_file}")
+                    success_status["image_description.json"] = True
+                except Exception as e:
+                    self.logger.error(f"Failed to save image_description.json: {e}")
+                    success_status["image_description.json"] = False
+            
             # Save summary results
             summary_result = results["summary_result"]
             
@@ -540,6 +575,17 @@ class VideoGenerationCrew:
             
         except Exception as e:
             self.logger.error(f"Failed to save media generation results: {e}")
+    
+    def _save_image_description_results(self, image_description_data: Dict[str, Any], scripts_folder: Path) -> None:
+        """Save image description results immediately after generation"""
+        try:
+            image_desc_file = scripts_folder / "image_description.json"
+            with open(image_desc_file, 'w', encoding='utf-8') as f:
+                json.dump(image_description_data, f, indent=2)
+            self.logger.info(f"✅ Saved image description to {image_desc_file}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save image description results: {e}")
     
     def _save_complete_results(self, complete_data: Dict[str, Any], output_folder: Path) -> None:
         """Save complete workflow results"""

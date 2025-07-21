@@ -8,6 +8,7 @@ from typing import Dict, Any, Optional
 import logging
 import json
 import re
+from openai import OpenAI
 
 
 class VideoTasks:
@@ -16,20 +17,152 @@ class VideoTasks:
     def __init__(self, logger: logging.Logger):
         self.logger = logger
     
-    def create_summary_generation_task(self, agent, user_prompt: str, reference_url: Optional[str] = None) -> Task:
+    def describe_image_directly(self, reference_url: str, openai_api_key: str) -> Dict[str, Any]:
+        """Directly call OpenAI Vision API to describe an image"""
+        
+        client = OpenAI(api_key=openai_api_key)
+        
+        # System prompt from the original task
+        system_prompt = """
+        Analyze the provided image and generate a structured description with variable name, short summary, and detailed description.
+        
+        ## TASK REQUIREMENTS
+        
+        Analyze the image to understand:
+        - Main subjects, objects, and visual elements
+        - Setting, environment, and context
+        - Style, mood, and composition
+        - Potential use cases and significance
+        
+        ## OUTPUT SPECIFICATIONS
+        
+        **Variable Name Rules:**
+        - Use snake_case format (lowercase with underscores)
+        - Make it descriptive but concise (2-4 words typically)
+        - Focus on the primary subject or key characteristic
+        - Examples: "corporate_headshot", "mountain_landscape", "tech_startup_logo", "vintage_car_photo"
+        
+        **Short Description Rules:**
+        - 5-15 words maximum
+        - Capture only main focus of the image, not the entire image
+        - Do not describe the background or any other elements apart from the main focus
+        - Be specific about key visual elements of the main subject
+        - Examples: "Professional headshot of young businessman", "Colorful abstract logo with geometric shapes"
+        
+        **Detailed Description Rules:**
+        - 30-80 words
+        - Include comprehensive visual details
+        - Describe subjects, setting, lighting, style, mood
+        - Mention colors, composition, and notable elements
+        - Provide context that would help someone understand the image's purpose or significance
+        
+        ## OUTPUT FORMAT
+        
+        Return ONLY a JSON object with this exact structure:
+        {
+            "image_description": {
+                "variable_name": "descriptive_snake_case_name",
+                "short_description": "Brief 5-15 word description of main elements",
+                "detailed_description": "Comprehensive 30-80 word description including visual details, setting, style, mood, colors, composition, and contextual significance of the image"
+            }
+        }
+        
+        ## IMPORTANT GUIDELINES
+        
+        - Focus on what is actually visible in the image
+        - Be objective and descriptive rather than interpretive
+        - Include technical details like lighting, camera angle, and composition when relevant
+        - Mention brand elements, text, or logos if present
+        - Consider how this image might be used in content creation workflows
+        - Ensure the variable name would be useful for developers/content creators
+        
+        CRITICAL: Return ONLY valid JSON with no additional text, explanations, or formatting outside the JSON structure.
+        """
+        
+        # Create user message with image
+        user_message = [
+            {
+                "type": "text",
+                "text": "Please analyze this image and provide a structured description according to the guidelines."
+            },
+            {
+                "type": "image_url",
+                "image_url": {
+                    "url": reference_url
+                }
+            }
+        ]
+        
+        try:
+            self.logger.info(f"Calling OpenAI Vision API for image: {reference_url}")
+            
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.5,
+                max_tokens=2000
+            )
+            
+            result_text = response.choices[0].message.content
+            
+            # Clean up the response
+            result_text = result_text.strip()
+            if result_text.startswith('```json'):
+                result_text = result_text[7:]
+            if result_text.endswith('```'):
+                result_text = result_text[:-3]
+            result_text = result_text.strip()
+            
+            # Parse JSON
+            result = json.loads(result_text)
+            
+            self.logger.info("Successfully described image using Vision API")
+            return result
+            
+        except json.JSONDecodeError as e:
+            self.logger.error(f"Failed to parse JSON response: {e}")
+            self.logger.error(f"Raw response: {result_text}")
+            # Return a structured error response
+            return {
+                "image_description": {
+                    "variable_name": "unknown_image",
+                    "short_description": "Failed to analyze image",
+                    "detailed_description": f"Image analysis failed due to JSON parsing error. Raw response: {result_text[:200]}..."
+                },
+                "error": str(e)
+            }
+        except Exception as e:
+            self.logger.error(f"Failed to describe image: {str(e)}")
+            # Return a structured error response
+            return {
+                "image_description": {
+                    "variable_name": "unknown_image", 
+                    "short_description": "Failed to analyze image",
+                    "detailed_description": f"Image analysis failed: {str(e)}"
+                },
+                "error": str(e)
+            }
+    
+    def create_summary_generation_task(self, agent, user_prompt: str, 
+                                     reference_image_description: Optional[str] = None,
+                                     reference_image_variable: Optional[str] = None) -> Task:
         """Create the video summary generation task"""
         
         return Task(
             description=f"""
-            Analyze the user text prompt and reference image and generate a comprehensive video summary.
+            Analyze the user text prompt and reference image description to generate a comprehensive video summary.
             
             USER INPUT:
             - Text Prompt: {user_prompt}
-            - Reference Image URL: {reference_url or "None provided"}
+            - Reference Image Description: {reference_image_description or "None provided"}
+            - Reference Image Variable: {reference_image_variable or "None provided"}
 
             ## Rules
 
-            * **Analyze both inputs together** to understand the true user intent and context. Combine the reference image with the instruction to infer the overall purpose and tone.
+            * **Analyze both inputs together** to understand the true user intent and context. Combine the reference image description with the instruction to infer the overall purpose and tone.
 
             * **Do NOT fabricate specific details** that would typically come from external sources (dates, prices, URLs, brand names not shown, specific statistics). Generic elements like countdown numbers or basic transitions are acceptable.
 
@@ -39,7 +172,11 @@ class VideoTasks:
 
             * **Keep scenes technically feasible** for AI video generation. Avoid overly complex transitions, multiple simultaneous actions, or intricate visual effects that would be difficult to render.
 
-            * **CRITICAL: Explicitly mention the reference image (logo/product/brand element/person/location) in your scene descriptions** when it should appear. Use clear phrases like "the logo appears", "logo integrates into", "product is shown", "brand symbol visible", etc. This ensures proper detection in later processing steps.
+            * **CRITICAL: When referring to the reference image in your scene descriptions, ALWAYS use the variable name `{reference_image_variable or 'reference_image'}`** (if provided). For example:
+              - Say "the `{reference_image_variable or 'reference_image'}` appears" instead of "the logo appears"
+              - Say "`{reference_image_variable or 'reference_image'}` integrates into the scene" instead of "product integrates into the scene"  
+              - Say "featuring the `{reference_image_variable or 'reference_image'}`" instead of "featuring the brand element"
+              This ensures consistent reference tracking throughout the video generation pipeline.
 
             * **Structure the summary with 3-5 separate scenes** that flow logically from one to another. Each scene should focus on a different aspect or moment of the video.
 
@@ -119,6 +256,8 @@ class VideoTasks:
             agent=agent,
             expected_output="JSON object containing visual summary, voiceover, and video configuration"
         )
+    
+
     
     def create_voiceover_generation_task(self, agent, summary_result: Dict[str, Any]) -> Task:
         """Create the voiceover generation task"""

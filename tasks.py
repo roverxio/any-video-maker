@@ -16,7 +16,9 @@ class VideoTasks:
     def __init__(self, logger: logging.Logger):
         self.logger = logger
     
-    def create_summary_generation_task(self, agent, user_prompt: str, reference_url: Optional[str] = None) -> Task:
+
+    
+    def create_summary_generation_task(self, agent, user_prompt: str, reference_url: Optional[str] = None, image_data: Optional[Dict[str, Any]] = None) -> Task:
         """Create the video summary generation task"""
         
         return Task(
@@ -26,11 +28,20 @@ class VideoTasks:
             USER INPUT:
             - Text Prompt: {user_prompt}
             - Reference Image URL: {reference_url or "None provided"}
+            
+            IMAGE ANALYSIS DATA:
+            - Variable Name: {image_data.get('variable_name', 'N/A') if image_data else 'N/A'}
+            - Description: {image_data.get('description', 'N/A') if image_data else 'N/A'}
+            - Main Subject: {image_data.get('main_subject', 'N/A') if image_data else 'N/A'}
+            - Visual Elements: {image_data.get('visual_elements', 'N/A') if image_data else 'N/A'}
+            - Marketing Insights: {image_data.get('marketing_insights', 'N/A') if image_data else 'N/A'}
+            - Brand Name: {image_data.get('brand_name', 'N/A') if image_data else 'N/A'}
+            - Category: {image_data.get('category', 'N/A') if image_data else 'N/A'}
 
             ## Rules
              * **Total video length should be 15-40 seconds across all scenes** *
             
-            * **Total video length should be 15-40 seconds across all scenes** *
+            * **40% of scenes should be Montage scenes** *
 
             * **Analyze both inputs together** to understand the true user intent and context. Combine the reference image with the instruction to infer the overall purpose and tone.
 
@@ -127,7 +138,7 @@ class VideoTasks:
             expected_output="JSON object containing visual summary, voiceover, and video configuration"
         )
     
-    def create_voiceover_generation_task(self, agent, summary_result: Dict[str, Any]) -> Task:
+    def create_voiceover_generation_task(self, agent, summary_result: Dict[str, Any], image_data: Optional[Dict[str, Any]] = None) -> Task:
         """Create the voiceover generation task"""
         
         return Task(
@@ -137,6 +148,15 @@ class VideoTasks:
             INPUT DATA:
             - Visual Summary: {summary_result.get('visual_summary', 'N/A')}
             - Video Config: {json.dumps(summary_result.get('video_config', {}), indent=2)}
+            
+            IMAGE ANALYSIS DATA:
+            - Variable Name: {image_data.get('variable_name', 'N/A') if image_data else 'N/A'}
+            - Description: {image_data.get('description', 'N/A') if image_data else 'N/A'}
+            - Main Subject: {image_data.get('main_subject', 'N/A') if image_data else 'N/A'}
+            - Visual Elements: {image_data.get('visual_elements', 'N/A') if image_data else 'N/A'}
+            - Marketing Insights: {image_data.get('marketing_insights', 'N/A') if image_data else 'N/A'}
+            - Brand Name: {image_data.get('brand_name', 'N/A') if image_data else 'N/A'}
+            - Category: {image_data.get('category', 'N/A') if image_data else 'N/A'}
             
             ## AUTO-DETECT VOICEOVER STYLE
             
@@ -196,16 +216,24 @@ class VideoTasks:
             expected_output="JSON object containing voiceover script with style detection and timing optimization"
         )
     
-    def create_script_generation_task(self, agent, summary_result: Dict[str, Any], reference_url: Optional[str] = None) -> Task:
+    def create_script_generation_task(self, agent, summary_result: Dict[str, Any], image_data: Optional[Dict[str, Any]] = None) -> Task:
         """Create the video script generation task"""
         
         return Task(
             description=f"""
             INPUT DATA:
             - Video Summary: {summary_result.get('visual_summary', 'N/A')}
-            - Reference Image URL: {reference_url or "None provided"}
             - Voiceover Data: {json.dumps(summary_result.get('voiceover_scenes', []), indent=2)}
             - Video Config: {json.dumps(summary_result.get('video_config', {}), indent=2)}
+            
+            IMAGE ANALYSIS DATA:
+            - Variable Name: {image_data.get('variable_name', 'N/A') if image_data else 'N/A'}
+            - Description: {image_data.get('description', 'N/A') if image_data else 'N/A'}
+            - Main Subject: {image_data.get('main_subject', 'N/A') if image_data else 'N/A'}
+            - Visual Elements: {image_data.get('visual_elements', 'N/A') if image_data else 'N/A'}
+            - Marketing Insights: {image_data.get('marketing_insights', 'N/A') if image_data else 'N/A'}
+            - Brand Name: {image_data.get('brand_name', 'N/A') if image_data else 'N/A'}
+            - Category: {image_data.get('category', 'N/A') if image_data else 'N/A'}
 
 ## CRITICAL INSTRUCTIONS (READ FIRST)
 
@@ -217,6 +245,7 @@ The reference image can be ANYTHING: logo, product, person, location, artwork, o
 - "product shown", "product displayed", "featuring the product"
 - "brand symbol", "brand element", "company logo"
 - "the [reference] appears", "shows the [reference]"
+- [reference] - image is m
 - Any direct mention of the reference image being visible
 
 **CRITICAL**: Evaluate EACH shot independently. Just because one shot has the reference doesn't mean all shots do.
@@ -397,11 +426,11 @@ CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explana
             callback=lambda result: self._validate_and_fix_script(
                 str(result), 
                 summary_result.get('visual_summary', ''), 
-                reference_url
+                image_data
             )
         )
     
-    def _validate_and_fix_script(self, script_result: str, visual_summary: str, reference_url: str = None) -> str:
+    def _validate_and_fix_script(self, script_result: str, visual_summary: str, image_data: Optional[Dict[str, Any]] = None) -> str:
         """
         Post-process script to fix reference detection and image prompt issues
         """
@@ -444,11 +473,11 @@ CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explana
                         fixed_count += 1
                     
                     # Fix image prompt if reference mentioned but missing from prompt
-                    if has_reference_in_description and reference_url:
+                    if has_reference_in_description and image_data:
                         image_prompt = scene.get('image_prompt', '')
                         if 'logo' not in image_prompt.lower() and 'brand' not in image_prompt.lower():
                             # Add reference to image prompt
-                            scene['image_prompt'] = f"{image_prompt.rstrip('.')}. The company logo is visible in the scene."
+                            scene['image_prompt'] = f"{image_prompt.rstrip('.')}. The {image_data.get('variable_name', 'reference')} is visible in the scene."
                             self.logger.info(f"Fixed Scene {scene_num}: Added reference to image prompt")
                             fixed_count += 1
                 
@@ -470,11 +499,11 @@ CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explana
                                 fixed_count += 1
                         
                         # Fix image prompt if reference mentioned but missing from prompt
-                        if has_reference_in_description and reference_url and shot.get('has_reference', False):
+                        if has_reference_in_description and image_data and shot.get('has_reference', False):
                             image_prompt = shot.get('image_prompt', '')
                             if 'logo' not in image_prompt.lower() and 'brand' not in image_prompt.lower():
                                 # Add reference to image prompt
-                                shot['image_prompt'] = f"{image_prompt.rstrip('.')}. The company logo is visible in the frame."
+                                shot['image_prompt'] = f"{image_prompt.rstrip('.')}. The {image_data.get('variable_name', 'reference')} is visible in the frame."
                                 self.logger.info(f"Fixed Scene {scene_num} Shot {shot_num}: Added reference to image prompt")
                                 fixed_count += 1
             
@@ -489,7 +518,8 @@ CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explana
             return script_result  # Return original if validation fails
     
     def create_voice_selection_task(self, agent, script_result: Dict[str, Any], 
-                                   user_prompt: str, reference_url: Optional[str] = None) -> Task:
+                                   user_prompt: str, reference_url: Optional[str] = None, 
+                                   image_data: Optional[Dict[str, Any]] = None) -> Task:
         """Create the voice selection task"""
         
         return Task(
@@ -499,6 +529,15 @@ CRITICAL: Return ONLY valid JSON - no trailing commas, no extra text, no explana
             INPUT DATA:
             - User Prompt: {user_prompt}
             - Video Script: {json.dumps(script_result, indent=2)}
+            
+            IMAGE ANALYSIS DATA:
+            - Variable Name: {image_data.get('variable_name', 'N/A') if image_data else 'N/A'}
+            - Description: {image_data.get('description', 'N/A') if image_data else 'N/A'}
+            - Main Subject: {image_data.get('main_subject', 'N/A') if image_data else 'N/A'}
+            - Visual Elements: {image_data.get('visual_elements', 'N/A') if image_data else 'N/A'}
+            - Marketing Insights: {image_data.get('marketing_insights', 'N/A') if image_data else 'N/A'}
+            - Brand Name: {image_data.get('brand_name', 'N/A') if image_data else 'N/A'}
+            - Category: {image_data.get('category', 'N/A') if image_data else 'N/A'}
             
             TASK:
             Analyze the video content and select a suitable voice from ElevenLabs library.

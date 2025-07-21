@@ -26,24 +26,52 @@ from video_crew import VideoGenerationCrew
 
 
 def setup_logging(log_file: Path) -> logging.Logger:
-    """Setup logging to both console and file"""
-    logger = logging.getLogger(__name__)
-    logger.setLevel(logging.INFO)
+    """Setup comprehensive logging to both console and multiple files"""
+    
+    # Get the root logger to capture all module logs
+    logger = logging.getLogger()
+    logger.setLevel(logging.DEBUG)
+    
+    # Clear any existing handlers
+    logger.handlers.clear()
     
     # Create formatters
-    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    detailed_formatter = logging.Formatter(
+        '%(asctime)s - %(name)s - %(levelname)s - %(funcName)s:%(lineno)d - %(message)s'
+    )
+    simple_formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    summary_formatter = logging.Formatter('%(asctime)s - %(message)s')
     
-    # Console handler
+    # Console handler (simplified output)
     console_handler = logging.StreamHandler()
     console_handler.setLevel(logging.INFO)
-    console_handler.setFormatter(formatter)
+    console_handler.setFormatter(simple_formatter)
     logger.addHandler(console_handler)
     
-    # File handler
-    file_handler = logging.FileHandler(log_file)
-    file_handler.setLevel(logging.DEBUG)
-    file_handler.setFormatter(formatter)
-    logger.addHandler(file_handler)
+    # Detailed file handler (everything)
+    detailed_file_handler = logging.FileHandler(log_file)
+    detailed_file_handler.setLevel(logging.DEBUG)
+    detailed_file_handler.setFormatter(detailed_formatter)
+    logger.addHandler(detailed_file_handler)
+    
+    # Summary file handler (key events only)
+    summary_file = log_file.parent / "summary.log"
+    summary_handler = logging.FileHandler(summary_file)
+    summary_handler.setLevel(logging.INFO)
+    summary_handler.setFormatter(summary_formatter)
+    summary_handler.addFilter(lambda record: 
+        any(keyword in record.getMessage().lower() for keyword in [
+            'starting', 'executing', 'completed', 'generated', 'saved', 'success', 'failed', 'error'
+        ])
+    )
+    logger.addHandler(summary_handler)
+    
+    # Error file handler (errors and warnings only)
+    error_file = log_file.parent / "errors.log"
+    error_handler = logging.FileHandler(error_file)
+    error_handler.setLevel(logging.WARNING)
+    error_handler.setFormatter(detailed_formatter)
+    logger.addHandler(error_handler)
     
     return logger
 
@@ -165,9 +193,14 @@ def main():
         for handler in logger.handlers:
             handler.setLevel(logging.DEBUG)
     
-    logger.info(f"Starting CrewAI video generation pipeline")
-    logger.info(f"Prompt: {args.prompt}")
-    logger.info(f"Reference URL: {args.reference_url}")
+    logger.info("=" * 80)
+    logger.info("🚀 STARTING CREWAI VIDEO GENERATION PIPELINE")
+    logger.info("=" * 80)
+    logger.info(f"📁 Run Folder: {run_folder}")
+    logger.info(f"📝 Prompt: {args.prompt}")
+    logger.info(f"🖼️  Reference URL: {args.reference_url}")
+    logger.info(f"⚙️  Verbose Mode: {args.verbose}")
+    logger.info("-" * 80)
     
     # Load configuration
     config = {
@@ -219,12 +252,29 @@ def main():
         # Generate and display report
         generate_report(run_folder, results, save_success, logger)
         
-        logger.info("CrewAI video generation pipeline completed successfully")
+        logger.info("=" * 80)
+        logger.info("✅ CREWAI VIDEO GENERATION PIPELINE COMPLETED SUCCESSFULLY")
+        logger.info("=" * 80)
+        logger.info(f"📁 Results saved in: {run_folder}")
+        logger.info(f"📄 Detailed logs: {run_folder}/generation.log")
+        logger.info(f"📋 Summary log: {run_folder}/summary.log")
+        logger.info(f"⚠️  Error log: {run_folder}/errors.log")
+        if results.get("media_result", {}).get("final_video"):
+            logger.info(f"🎬 Final video: {results['media_result']['final_video']}")
+        logger.info("=" * 80)
         return 0
         
     except Exception as e:
-        logger.error(f"CrewAI video generation pipeline failed: {e}")
+        logger.error("=" * 80)
+        logger.error("❌ CREWAI VIDEO GENERATION PIPELINE FAILED")
+        logger.error("=" * 80)
+        logger.error(f"Error: {e}")
+        logger.error(f"📁 Partial results may be in: {run_folder}")
+        logger.error(f"📄 Check detailed logs: {run_folder}/generation.log")
+        logger.error(f"⚠️  Check error log: {run_folder}/errors.log")
+        logger.error("=" * 80)
         print(f"❌ CrewAI video generation pipeline failed: {e}")
+        print(f"📄 Check logs in: {run_folder}")
         return 1
 
 

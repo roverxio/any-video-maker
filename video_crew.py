@@ -10,10 +10,110 @@ import json
 import os
 from pathlib import Path
 from datetime import datetime
+from openai import OpenAI
 
 from agents import VideoAgents
 from tasks import VideoTasks
 from media_generation_handler import MediaGenerationHandler
+
+
+class ImageAnalysisGenerator:
+    """Generates image analysis using OpenAI Vision API"""
+    
+    def __init__(self, config: Dict[str, Any], logger: logging.Logger):
+        self.config = config
+        self.logger = logger
+        self.client = OpenAI(api_key=config["OPENAI_API_KEY"])
+    
+    def analyze_image(self, image_url: str) -> Dict[str, Any]:
+        """Analyze image using OpenAI Vision API"""
+        
+        try:
+            self.logger.info(f"Analyzing image with OpenAI Vision API: {image_url}")
+            
+            # Create the vision API message
+            user_message = [
+                {
+                    "type": "text",
+                    "text": """Analyze this image and provide detailed analysis in the following JSON format:
+
+{
+  "variable_name": "descriptive_variable_name",
+  "description": "exactly 100 words combining visual analysis and marketing insights",
+  "main_subject": "primary subject in the image",
+  "visual_elements": "key visual elements, colors, composition",
+  "marketing_insights": "target audience appeal, brand positioning, emotional impact",
+  "brand_name": "brand name if visible, or null",
+  "category": "product/logo/person/location/artwork/other"
+}
+
+Requirements:
+- For brands/logos: Include brand name in variable_name (e.g., "nike_logo", "starbucks_brand")
+- For people: Create fitting imaginary name (e.g., "sarah_professional", "david_athlete")
+- For products: Use descriptive names (e.g., "luxury_sunglasses", "sports_headphones")
+- For locations: Use descriptive names (e.g., "modern_office", "mountain_landscape")
+- Variable name: lowercase, underscores for spaces, concise
+- Description: exactly 100 words, professional analysis combining visual and marketing aspects"""
+                },
+                {
+                    "type": "image_url",
+                    "image_url": {
+                        "url": image_url
+                    }
+                }
+            ]
+            
+            response = self.client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                    {"role": "user", "content": user_message}
+                ],
+                temperature=0.3,
+                max_tokens=1000
+            )
+            
+            result = response.choices[0].message.content
+            self.logger.info("Image analysis completed successfully")
+            
+            # Try to parse as JSON
+            try:
+                parsed_result = json.loads(result)
+                return parsed_result
+            except json.JSONDecodeError:
+                self.logger.warning("Response was not valid JSON, attempting to extract JSON")
+                # Try to extract JSON from the response if it's embedded in other text
+                import re
+                json_match = re.search(r'\{.*\}', result, re.DOTALL)
+                if json_match:
+                    try:
+                        parsed_result = json.loads(json_match.group())
+                        return parsed_result
+                    except json.JSONDecodeError:
+                        pass
+                
+                # If parsing fails, return a basic structure with the raw result
+                return {
+                    "variable_name": "analyzed_image",
+                    "description": result[:500] if len(result) > 500 else result,
+                    "main_subject": "Unable to parse",
+                    "visual_elements": "Analysis available in description",
+                    "marketing_insights": "Analysis available in description",
+                    "brand_name": None,
+                    "category": "other"
+                }
+                
+        except Exception as e:
+            error_msg = f"Failed to analyze image: {str(e)}"
+            self.logger.error(error_msg)
+            return {
+                "variable_name": "error_image",
+                "description": error_msg,
+                "main_subject": "Error",
+                "visual_elements": "Error occurred",
+                "marketing_insights": "Error occurred",
+                "brand_name": None,
+                "category": "other"
+            }
 
 
 class VideoGenerationCrew:
@@ -24,6 +124,7 @@ class VideoGenerationCrew:
         self.logger = logger
         self.agents = VideoAgents(config, logger)
         self.tasks = VideoTasks(logger)
+        self.image_analyzer = ImageAnalysisGenerator(config, logger)
     
     def generate_video_content(self, user_prompt: str, reference_url: Optional[str] = None, 
                              output_folder: Optional[Path] = None) -> Dict[str, Any]:
@@ -42,6 +143,12 @@ class VideoGenerationCrew:
         try:
             self.logger.info("Starting CrewAI video generation workflow")
             
+            # Validate reference URL is provided
+            if not reference_url:
+                error_msg = "Reference image URL is required for video generation workflow"
+                self.logger.error(error_msg)
+                raise ValueError(error_msg)
+            
             # Create output folder if not provided
             if output_folder is None:
                 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -52,15 +159,26 @@ class VideoGenerationCrew:
             scripts_folder = output_folder / "video_scripts"
             scripts_folder.mkdir(exist_ok=True)
             
+            # Step 1: Analyze Reference Image (Direct execution)
+            self.logger.info("🔍 STEP 1/6: Starting image analysis...")
+            start_time = datetime.now()
+            image_data = self.image_analyzer.analyze_image(reference_url)
+            duration = (datetime.now() - start_time).total_seconds()
+            
+            self.logger.info(f"✅ Step 1 completed in {duration:.2f}s - Generated variable: {image_data.get('variable_name', 'N/A')}")
+            
+            # Save image analysis results immediately
+            self._save_image_analysis_results(image_data, scripts_folder)
+            
             # Create agents
             summary_agent = self.agents.create_summary_generator_agent()
             voiceover_agent = self.agents.create_voiceover_generator_agent()
             script_agent = self.agents.create_script_generator_agent()
             voice_agent = self.agents.create_voice_selection_agent()
             
-            # Step 1: Generate Summary
+            # Step 2: Generate Summary
             summary_task = self.tasks.create_summary_generation_task(
-                summary_agent, user_prompt, reference_url
+                summary_agent, user_prompt, reference_url, image_data
             )
             
             summary_crew = Crew(
@@ -70,16 +188,20 @@ class VideoGenerationCrew:
                 memory=False
             )
             
-            self.logger.info("Executing summary generation task...")
+            self.logger.info("📝 STEP 2/6: Starting summary generation...")
+            start_time = datetime.now()
             summary_result = summary_crew.kickoff()
             summary_data = self._parse_crew_result(summary_result, "summary")
+            duration = (datetime.now() - start_time).total_seconds()
+            
+            self.logger.info(f"✅ Step 2 completed in {duration:.2f}s - Generated {len(summary_data.get('visual_summary', '').split())} word summary")
             
             # Save summary results immediately
             self._save_summary_results(summary_data, scripts_folder)
             
-            # Step 2: Generate Voiceover
+            # Step 3: Generate Voiceover
             voiceover_task = self.tasks.create_voiceover_generation_task(
-                voiceover_agent, summary_data
+                voiceover_agent, summary_data, image_data
             )
             
             voiceover_crew = Crew(
@@ -89,16 +211,21 @@ class VideoGenerationCrew:
                 memory=False
             )
             
-            self.logger.info("Executing voiceover generation task...")
+            self.logger.info("🎙️ STEP 3/6: Starting voiceover generation...")
+            start_time = datetime.now()
             voiceover_result = voiceover_crew.kickoff()
             voiceover_data = self._parse_crew_result(voiceover_result, "voiceover")
+            duration = (datetime.now() - start_time).total_seconds()
+            
+            scenes_count = len(voiceover_data.get('voiceover_scenes', []))
+            self.logger.info(f"✅ Step 3 completed in {duration:.2f}s - Generated voiceover for {scenes_count} scenes")
             
             # Save voiceover results immediately
             self._save_voiceover_results(voiceover_data, summary_data, scripts_folder)
             
-            # Step 3: Generate Script
+            # Step 4: Generate Script
             script_task = self.tasks.create_script_generation_task(
-                script_agent, summary_data
+                script_agent, summary_data, image_data
             )
             
             script_crew = Crew(
@@ -108,16 +235,22 @@ class VideoGenerationCrew:
                 memory=False
             )
             
-            self.logger.info("Executing script generation task...")
+            self.logger.info("📜 STEP 4/6: Starting script generation...")
+            start_time = datetime.now()
             script_result = script_crew.kickoff()
             final_script = self._parse_crew_result(script_result, "script")
+            duration = (datetime.now() - start_time).total_seconds()
+            
+            total_duration = final_script.get('video_config', {}).get('total_duration', 0)
+            scenes_count = len(final_script.get('scenes', []))
+            self.logger.info(f"✅ Step 4 completed in {duration:.2f}s - Generated {scenes_count} scenes, {total_duration}s video")
             
             # Save script results immediately
             self._save_script_results(final_script, scripts_folder)
             
-            # Step 4: Select Voice
+            # Step 5: Select Voice
             voice_task = self.tasks.create_voice_selection_task(
-                voice_agent, final_script, user_prompt, reference_url
+                voice_agent, final_script, user_prompt, reference_url, image_data
             )
             
             voice_crew = Crew(
@@ -127,25 +260,36 @@ class VideoGenerationCrew:
                 memory=False
             )
             
-            self.logger.info("Executing voice selection task...")
+            self.logger.info("🎤 STEP 5/6: Starting voice selection...")
+            start_time = datetime.now()
             voice_result = voice_crew.kickoff()
             voice_data = self._parse_crew_result(voice_result, "voice")
+            duration = (datetime.now() - start_time).total_seconds()
+            
+            selected_voice = voice_data.get('selected_voice_id', 'N/A')
+            self.logger.info(f"✅ Step 5 completed in {duration:.2f}s - Selected voice: {selected_voice}")
             
             # Save voice selection results immediately
             self._save_voice_results(voice_data, scripts_folder)
             
-            # Step 5: Generate Media (using direct execution, not CrewAI agent)
-            self.logger.info("Executing media generation...")
+            # Step 6: Generate Media (using direct execution, not CrewAI agent)
+            self.logger.info("🎬 STEP 6/6: Starting media generation...")
+            start_time = datetime.now()
             media_handler = MediaGenerationHandler(self.config, self.logger, output_folder)
             media_result = media_handler.generate_media(
                 final_script, voice_data, user_prompt, reference_url
             )
+            duration = (datetime.now() - start_time).total_seconds()
+            
+            final_video = media_result.get('final_video', 'N/A')
+            self.logger.info(f"✅ Step 6 completed in {duration:.2f}s - Created: {final_video}")
             
             # Save media generation results immediately
             self._save_media_results(media_result, scripts_folder)
             
             # Combine all results
             complete_result = {
+                "image_result": image_data,
                 "summary_result": summary_data,
                 "voiceover_result": voiceover_data,
                 "script_result": final_script,
@@ -153,18 +297,19 @@ class VideoGenerationCrew:
                 "media_result": media_result,
                 "user_prompt": user_prompt,
                 "reference_url": reference_url,
-                "generation_timestamp": datetime.now().isoformat(),
                 "output_folder": str(output_folder)
             }
             
             # Save complete workflow results
-            self._save_complete_results(complete_result, output_folder)
+            complete_file = scripts_folder / "complete_workflow.json"
+            with open(complete_file, 'w', encoding='utf-8') as f:
+                json.dump(complete_result, f, indent=2, default=str)
+            self.logger.info(f"✅ Saved complete workflow results to {complete_file}")
             
-            self.logger.info("CrewAI video generation workflow completed successfully")
             return complete_result
             
         except Exception as e:
-            self.logger.error(f"CrewAI workflow failed: {str(e)}")
+            self.logger.error(f"Video generation workflow failed: {e}")
             raise
     
     def _parse_crew_result(self, result, step_name: str) -> Dict[str, Any]:
@@ -498,6 +643,18 @@ class VideoGenerationCrew:
         except Exception as e:
             self.logger.error(f"Error saving results: {e}")
             return {"error": False} 
+
+    def _save_image_analysis_results(self, image_data: Dict[str, Any], scripts_folder: Path) -> None:
+        """Save image analysis results immediately after generation"""
+        try:
+            # Save image analysis as JSON
+            image_analysis_file = scripts_folder / "image_analysis.json"
+            with open(image_analysis_file, 'w', encoding='utf-8') as f:
+                json.dump(image_data, f, indent=2)
+            self.logger.info(f"✅ Saved image analysis to {image_analysis_file}")
+            
+        except Exception as e:
+            self.logger.error(f"Failed to save image analysis results: {e}")
 
     def _save_summary_results(self, summary_data: Dict[str, Any], scripts_folder: Path) -> None:
         """Save summary results immediately after generation"""

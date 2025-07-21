@@ -68,8 +68,8 @@ class VideoAgents:
             # Agent-specific configuration
             config={
                 "openai_api_key": self.config["OPENAI_API_KEY"],
-                "model": "gpt-4o",
-                "temperature": 0.6
+                "model": "gpt-4.1",
+                "temperature": 1.0
             }
         ) 
     
@@ -105,8 +105,8 @@ class VideoAgents:
             # Agent-specific configuration
             config={
                 "openai_api_key": self.config["OPENAI_API_KEY"],
-                "model": "gpt-4o",
-                "temperature": 0.3
+                "model": "gpt-4.1",
+                "temperature": 1
             }
         )
     
@@ -137,10 +137,12 @@ class VideoAgents:
             # Agent-specific configuration
             config={
                 "openai_api_key": self.config["OPENAI_API_KEY"],
-                "model": "gpt-4o",
-                "temperature": 0.4
+                "model": "gpt-4.1",
+                "temperature": 1
             }
         )
+    
+
     
 
     

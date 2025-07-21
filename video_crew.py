@@ -98,7 +98,7 @@ class VideoGenerationCrew:
             
             # Step 3: Generate Script
             script_task = self.tasks.create_script_generation_task(
-                script_agent, summary_data
+                script_agent, summary_data, voiceover_data, reference_url
             )
             
             script_crew = Crew(
@@ -421,28 +421,6 @@ class VideoGenerationCrew:
                 self.logger.error(f"Failed to save voiceover_generation.json: {e}")
                 success_status["voiceover_generation.json"] = False
             
-            # Save legacy voiceover format for compatibility
-            try:
-                voiceover_file = scripts_folder / "voiceover.json"
-                # Extract data from either new voiceover_result or fallback to summary
-                if voiceover_result and "voiceover_generation" in voiceover_result:
-                    voiceover_data = {
-                        "voiceover_text": voiceover_result["voiceover_generation"].get("full_voiceover_text", ""),
-                        "scenes": voiceover_result["voiceover_generation"].get("scenes", [])
-                    }
-                else:
-                    voiceover_data = {
-                        "voiceover_text": summary_result.get("voiceover", ""),
-                        "scenes": summary_result.get("voiceover_scenes", [])
-                    }
-                with open(voiceover_file, 'w', encoding='utf-8') as f:
-                    json.dump(voiceover_data, f, indent=2)
-                self.logger.info(f"Saved voiceover to {voiceover_file}")
-                success_status["voiceover.json"] = True
-            except Exception as e:
-                self.logger.error(f"Failed to save voiceover.json: {e}")
-                success_status["voiceover.json"] = False
-            
             # Save script results
             script_result = results["script_result"]
             
@@ -526,22 +504,6 @@ class VideoGenerationCrew:
             with open(voiceover_file, 'w', encoding='utf-8') as f:
                 json.dump(voiceover_data, f, indent=2)
             self.logger.info(f"✅ Saved voiceover generation to {voiceover_file}")
-            
-            # Save legacy voiceover format for compatibility
-            voiceover_legacy_file = scripts_folder / "voiceover.json"
-            if voiceover_data and "voiceover_generation" in voiceover_data:
-                voiceover_legacy_data = {
-                    "voiceover_text": voiceover_data["voiceover_generation"].get("full_voiceover_text", ""),
-                    "scenes": voiceover_data["voiceover_generation"].get("scenes", [])
-                }
-            else:
-                voiceover_legacy_data = {
-                    "voiceover_text": summary_data.get("voiceover", ""),
-                    "scenes": summary_data.get("voiceover_scenes", [])
-                }
-            with open(voiceover_legacy_file, 'w', encoding='utf-8') as f:
-                json.dump(voiceover_legacy_data, f, indent=2)
-            self.logger.info(f"✅ Saved legacy voiceover to {voiceover_legacy_file}")
             
         except Exception as e:
             self.logger.error(f"Failed to save voiceover results: {e}")

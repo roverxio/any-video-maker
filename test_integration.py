@@ -78,7 +78,6 @@ def test_workflow():
             "summary.md": True,
             "config.json": True,
             "voiceover_generation.json": True,
-            "voiceover.json": True,
             "script.json": True,
             "voice_selection.json": True,
             "media_generation.json": True,

@@ -153,10 +153,10 @@ class VideoTasks:
             **Natural Speech**: Write like talking to a friend, not reading ad copy. Use authentic conversational language.
             
             **Timing**: Extract scene durations from summary and match word count:
-            - [3s] scenes = max 7-8 words
-            - [5s] scenes = max 12-13 words  
-            - [7s] scenes = max 17-18 words
-            - [10s] scenes = max 25 words
+            - [3s] scenes = max 9 words
+            - [5s] scenes = max 15 words  
+            - [7s] scenes = max 21 words
+            - [10s] scenes = max 30 words
             
             **Scene Matching**: Match voiceover content to each scene's visual elements and emotional tone.
             
@@ -189,15 +189,21 @@ class VideoTasks:
             expected_output="JSON object containing voiceover script with style detection and timing optimization"
         )
     
-    def create_script_generation_task(self, agent, summary_result: Dict[str, Any], reference_url: Optional[str] = None) -> Task:
+    def create_script_generation_task(self, agent, summary_result: Dict[str, Any], 
+                                     voiceover_result: Dict[str, Any], reference_url: Optional[str] = None) -> Task:
         """Create the video script generation task"""
+        
+        # Extract voiceover data properly from the voiceover_generation task output
+        voiceover_data = voiceover_result.get('voiceover_generation', {})
+        voiceover_scenes = voiceover_data.get('scenes', [])
         
         return Task(
             description=f"""
             INPUT DATA:
             - Video Summary: {summary_result.get('visual_summary', 'N/A')}
             - Reference Image URL: {reference_url or "None provided"}
-            - Voiceover Data: {json.dumps(summary_result.get('voiceover_scenes', []), indent=2)}
+            - Voiceover Data: {json.dumps(voiceover_scenes, indent=2)}
+            - Voiceover Style: {voiceover_data.get('detected_style', 'N/A')}
             - Video Config: {json.dumps(summary_result.get('video_config', {}), indent=2)}
 
 ## CRITICAL INSTRUCTIONS (READ FIRST)
@@ -296,19 +302,25 @@ CRITICAL JSON REQUIREMENTS:
 
 1. **Extract scenes** from the visual summary with descriptions and durations
 
-2. **For EACH scene part, check for reference mentions:**
+2. **Extract voiceover text** from the input voiceover data - use the exact voiceover_text for each corresponding scene number
+   EXAMPLE: If input voiceover data contains:
+   [
+     {{"scene_number": "Scene 1", "voiceover_text": "Check out these stylish headphones!", ...}},
+     {{"scene_number": "Scene 2", "voiceover_text": "Just feel how the music takes over!", ...}}
+   ]
+   Then use "Check out these stylish headphones!" for Scene 1 and "Just feel how the music takes over!" for Scene 2
+
+3. **For EACH scene part, check for reference mentions:**
    - Does this specific part mention the logo/product/reference appearing?
    - If yes → has_reference: true for that shot
    - If no → has_reference: false
 
-3. **Create COMPLETE image prompts:**
+4. **Create COMPLETE image prompts:**
    - Start with the main subject
    - Add the setting/background
    - Include ALL visual elements mentioned
    - If reference mentioned, describe it clearly
    - Use ONLY static descriptions
-
-4. **Match voiceover** text to scenes based on content and timing
 
 5. **Determine scene composition:**
    - "single_shot": ONE continuous action/view with no transitions
@@ -322,7 +334,12 @@ CRITICAL JSON REQUIREMENTS:
 
 9. For MONTAGE scenes: The ideal duration for each shot is 1-3 seconds (max 3 seconds per shot!)
 
-10. Voiceover text always stays at the scene level, never at the shot level
+10. **Voiceover text mapping:** Use the exact voiceover_text from the input voiceover data. 
+    - CRITICAL: Find the voiceover scene with "scene_number": "Scene 1" and use its "voiceover_text" for Scene 1 in output
+    - CRITICAL: Find the voiceover scene with "scene_number": "Scene 2" and use its "voiceover_text" for Scene 2 in output  
+    - Continue this mapping for all scenes: Scene N input → Scene N output
+    - NEVER generate new voiceover text - only use the exact text provided in the input data
+    - Voiceover text always stays at the scene level, never at the shot level
 
 11. **IMAGE PROMPTS - Create STATIC image descriptions:**
     - Describe ONLY what's visible in a single frame/moment
@@ -350,6 +367,8 @@ CRITICAL JSON REQUIREMENTS:
 - [ ] Are my image prompts 100% static (no motion words)?
 - [ ] If the summary mentions logo/product appearing, is has_reference: true?
 - [ ] Is my JSON valid with no trailing commas?
+- [ ] Did I use the exact voiceover_text from the input data (not generate new voiceover)?
+- [ ] Does each scene's voiceover_text match the corresponding scene_number from the input voiceover data?
 
 ## EXAMPLE ANALYSIS:
 - "Close-up of headphones, camera pulls back revealing people" = MONTAGE (2+ distinct views)
